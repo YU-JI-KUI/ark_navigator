@@ -4,7 +4,9 @@ import numpy as np
 from typing import List
 from ray import serve
 from ark_nav.config import settings
-from ark_nav.core.utils.nav_logger import setup_logging
+from ark_nav.core.utils.nav_logger import setup_logging, get_logger
+
+logger = get_logger(__name__)
 
 MIN_REPLICAS = int(os.getenv("RAY_MIN_REPLICAS", 2))
 
@@ -28,16 +30,16 @@ class RAGModelDeployment:
         import torch
         setup_logging()
         self.device = "cuda" if torch.cuda.is_available() and settings.use_gpu else "cpu"
-        print(f"[Rerank] 加载模型到 {self.device}")
+        logger.info(f"[Rerank] 加载模型到 {self.device}")
         self.rerank_model = CrossEncoder(settings.rerank_model, max_length=512, device=self.device)
         self.rerank_model.eval()
-        print(f"[Rerank] 模型加载完成")
-        print(f"[Embedding] 加载模型到 {self.device}")
+        logger.info(f"[Rerank] 模型加载完成")
+        logger.info(f"[Embedding] 加载模型到 {self.device}")
         self.embedding_model = SentenceTransformer(
             settings.embedding_model,
             device=self.device
         )
-        print(f"[Embedding] 模型加载完成")
+        logger.info(f"[Embedding] 模型加载完成")
 
     async def rerank(self, pairs) -> List[float]:
         """重排序打分"""
@@ -95,6 +97,6 @@ if __name__ == "__main__":
     async def test():
         handle = serve.get_deployment_handle("rag-models", "default")
         scores = await handle.rerank.remote(["世界", "再见"])
-        print(f"重排序分数: {scores}")
+        logger.info(f"重排序分数: {scores}")
 
     asyncio.run(test())

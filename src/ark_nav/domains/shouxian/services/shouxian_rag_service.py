@@ -6,6 +6,9 @@ from typing import Any, List, Dict, Optional, Tuple
 import pandas as pd
 from ark_nav.config import settings
 from ark_nav.core.services.rag_service import HybridRetriever, SimpleRuleEngine
+from ark_nav.core.utils.nav_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class ShouxianRAGService:
@@ -34,7 +37,7 @@ class ShouxianRAGService:
             chains = self.load_data("data/D_1229_cots_std.xlsx")
             chains_2 = self.load_data("data/1_菜单扩写_cot_std.xlsx")
             combined =  chains + chains_2
-            print("找到了COT的向量index，准备加载")
+            logger.info("找到了COT的向量index，准备加载")
             self.retriever.load_index(index_path,combined)
         else:
             raise Exception("there is not COT index")
@@ -54,7 +57,7 @@ class ShouxianRAGService:
 
     def load_data(self, path: str) -> List[Dict[str, Any]]:
         """加载数据"""
-        print(f"加载数据: {path}")
+        logger.info(f"加载数据: {path}")
         file_path = Path(path)
 
         if not file_path.exists():
@@ -89,7 +92,7 @@ class ShouxianRAGService:
             raise ValueError(f"不支持的格式: {ext}")
 
         chains = [c for c in chains if c.get("text", "").strip() and c.get("cot_feedback", "").strip()]
-        print(f"加载完成: {len(chains)}条")
+        logger.info(f"加载完成: {len(chains)}条")
         return chains
 
     async def build_index(self, chains: List[Dict[str, Any]]):

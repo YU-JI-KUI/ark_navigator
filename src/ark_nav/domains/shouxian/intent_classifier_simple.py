@@ -79,4 +79,4 @@ if __name__ == "__main__":
             user_message="我想体检"
     ))
 
-    print(result)
+    logger.info(result)

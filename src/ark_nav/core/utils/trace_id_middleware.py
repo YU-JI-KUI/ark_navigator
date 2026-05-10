@@ -4,7 +4,9 @@ import time
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from ark_nav.core.utils.nav_logger import set_trace_id
+from ark_nav.core.utils.nav_logger import set_trace_id, get_logger
+
+logger = get_logger(__name__)
 
 
 class TraceIDMiddleware(BaseHTTPMiddleware):
@@ -21,16 +23,16 @@ class TraceIDMiddleware(BaseHTTPMiddleware):
         start = time.time()
         # 从请求头获取或自动生成 trace_id
         trace_id = request.headers.get('X-Request-ID')
-        print("X-Request-ID:", trace_id)
+        logger.info(f"X-Request-ID: {trace_id}")
         trace_id = set_trace_id(trace_id)
-        print("trace_id:", trace_id)
+        logger.info(f"trace_id: {trace_id}")
 
-        print(f"[INGRESS START] path={request.url.path}, trace_id={trace_id}, ts={start}")
+        logger.info(f"[INGRESS START] path={request.url.path}, trace_id={trace_id}, ts={start}")
         # 处理请求
         response: Response = await call_next(request)
 
         end = time.time()
-        print(f"[INGRESS END] path={request.url.path}, trace_id={trace_id}, latency={end - start:.3f}s")
+        logger.info(f"[INGRESS END] path={request.url.path}, trace_id={trace_id}, latency={end - start:.3f}s")
 
         # 添加到响应头
         response.headers['X-Request-ID'] = trace_id

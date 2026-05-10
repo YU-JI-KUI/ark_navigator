@@ -4,7 +4,6 @@ import re
 import copy
 import datetime
 import os
-import traceback
 from aiocache import cached
 from aiocache.serializers import StringSerializer
 from dotenv import load_dotenv
@@ -314,8 +313,7 @@ class ShouXianNavService:
             return final_result
 
         except Exception as e:
-            traceback.print_exc()
-            logger.error(f"{request.msg_id}, 请求异常:{str(e)}")
+            logger.error(f"{request.msg_id}, 请求异常:{str(e)}", exc_info=True)
             final_result = self.postprocess(request, ChatCompletionResponse(code_msg=str(e)))
             return final_result
 
@@ -342,8 +340,7 @@ class ShouXianNavService:
             return self.post_search(final_result)
 
         except Exception as e:
-            traceback.print_exc()
-            logger.error(f"{request.msg_id}, 请求异常:{str(e)}")
+            logger.error(f"{request.msg_id}, 请求异常:{str(e)}", exc_info=True)
             return self.post_search(str(e))
 
     async def _do_intent_recognition(self, request: ChatCompletionRequest, state: Dict[str, Any]) -> Dict[str, Any]:

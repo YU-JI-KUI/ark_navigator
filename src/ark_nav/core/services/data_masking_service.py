@@ -1,8 +1,9 @@
 import re
 from typing import List, Tuple, Callable
-import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+
+from ark_nav.core.utils.nav_logger import get_logger
 
 # 设置最大线程数
 MAX_WORKERS = 4
@@ -16,7 +17,7 @@ class DataMaskingService:
         if custom_patterns:
             self.patterns.extend(custom_patterns)
 
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         self.executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
     def _get_default_patterns(self):

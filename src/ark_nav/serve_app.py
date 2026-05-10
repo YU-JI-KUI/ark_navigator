@@ -42,9 +42,9 @@ logger = get_logger(__name__)
 def build_app(args=None):
     """构建Ray Serve应用"""
 
-    print("=" * 60)
-    print("构建Ray Serve应用")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("构建Ray Serve应用")
+    logger.info("=" * 60)
 
     # 1. 模型层（GPU单副本）
     rag_models = RAGModelDeployment.bind()
@@ -62,9 +62,9 @@ def build_app(args=None):
         ylx_intent_agent,
     )
 
-    print("=" * 60)
-    print("应用构建完成")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("应用构建完成")
+    logger.info("=" * 60)
 
     return app
 
@@ -87,20 +87,20 @@ def main():
     # 部署应用
     serve.run(build_app())
 
-    print("\n" + "=" * 70)
-    print("\U0001f680 服务已启动")
-    print("=" * 70)
-    print(f"\U0001f4e1 API服务:       http://localhost:{settings.port}")
-    print(f"\U0001f4da API文档:       http://localhost:{settings.port}/docs")
-    print(f"\U0001f4ca Ray Dashboard: http://localhost:8265")
-    print("=" * 70)
-    print("\n\U0001f4a1 Dashboard功能:")
-    print("  - 查看所有部署状态和副本数")
-    print("  - 监控请求QPS、延迟、错误率")
-    print("  - 查看GPU/CPU使用率")
-    print("  - 实时日志和追踪")
-    print("  - 自动扩展状态")
-    print("\n按Ctrl+C停止服务\n")
+    logger.info("\n" + "=" * 70)
+    logger.info("\U0001f680 服务已启动")
+    logger.info("=" * 70)
+    logger.info(f"\U0001f4e1 API服务:       http://localhost:{settings.port}")
+    logger.info(f"\U0001f4da API文档:       http://localhost:{settings.port}/docs")
+    logger.info(f"\U0001f4ca Ray Dashboard: http://localhost:8265")
+    logger.info("=" * 70)
+    logger.info("\n\U0001f4a1 Dashboard功能:")
+    logger.info("  - 查看所有部署状态和副本数")
+    logger.info("  - 监控请求QPS、延迟、错误率")
+    logger.info("  - 查看GPU/CPU使用率")
+    logger.info("  - 实时日志和追踪")
+    logger.info("  - 自动扩展状态")
+    logger.info("\n按Ctrl+C停止服务\n")
 
     # 保持运行
     import time
@@ -108,7 +108,7 @@ def main():
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n服务停止")
+        logger.info("\n服务停止")
 
 
 if __name__ == "__main__":

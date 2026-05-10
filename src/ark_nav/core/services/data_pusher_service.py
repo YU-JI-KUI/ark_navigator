@@ -3,6 +3,10 @@ from datetime import datetime
 
 import httpx
 
+from ark_nav.core.utils.nav_logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class DataPusherService:
     """数据推送服务"""
@@ -36,9 +40,9 @@ class DataPusherService:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(self.url, json=payload)
-                print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 已推送 {len(batch)} 条数据到Argilla，状态码: {response.status_code}")
+                logger.info(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 已推送 {len(batch)} 条数据到Argilla，状态码: {response.status_code}")
             except Exception as e:
-                print(f"推送失败: {str(e)}")
+                logger.error(f"推送失败: {str(e)}", exc_info=True)
 
     async def push(self, data):
         if self.queue is None:

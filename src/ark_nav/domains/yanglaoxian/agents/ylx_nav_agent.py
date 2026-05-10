@@ -2,7 +2,6 @@ import os
 import time
 from typing import List, Optional, Dict, Any
 from ray import serve
-import traceback
 
 from ark_nav.core.services.xiezhi_http import call_bigmodel_api, fetch_rag
 from ark_nav.core.utils.nav_logger import get_logger, setup_logging
@@ -105,8 +104,7 @@ class NavYLXAgentDeployment:
             )
 
         except Exception as e:
-            traceback.print_exc()
-            logger.error(f"{msg_id}, 请求异常:{str(e)}")
+            logger.error(f"{msg_id}, 请求异常:{str(e)}", exc_info=True)
             default_resp = IntentResult(
                 result="养老险意图",
                 source="direct",
@@ -150,8 +148,7 @@ class NavYLXAgentDeployment:
                 )
 
         except Exception as e:
-            traceback.print_exc()
-            logger.error(f"{request.msg_id}, 请求异常:{str(e)}")
+            logger.error(f"{request.msg_id}, 请求异常:{str(e)}", exc_info=True)
             default_resp = YLXResponse(
                 code="-1",
                 code_msg=str(e),
@@ -168,6 +165,5 @@ class NavYLXAgentDeployment:
             await self.agent_pfm_kb_svc.load_data(request.kg_id, request.is_reload)
             return {"status": "success"}
         except Exception as e:
-            traceback.print_exc()
-            logger.error(f"重置养老险 FAISS 索引异常:{str(e)}")
+            logger.error(f"重置养老险 FAISS 索引异常:{str(e)}", exc_info=True)
             return {"status": f"failed -> {str(e)}"}

@@ -156,6 +156,9 @@ def log_http_request(logger: logging.Logger, request, raw_request):
     logger.info(f"user_message: {request.user_message}")
 
 
+_exec_time_logger = structlog.get_logger("ark_nav.exec_time")
+
+
 def print_execution_time(func):
     """
     装饰器：同时支持同步和异步函数，准确打印执行耗时
@@ -167,11 +170,11 @@ def print_execution_time(func):
         try:
             result = func(*args, **kwargs)
             end = time.perf_counter()
-            print(f"[INFO] {func.__name__} 执行耗时: {end - start:.4f} 秒, params: {kwargs}")
+            _exec_time_logger.info(f"[INFO] {func.__name__} 执行耗时: {end - start:.4f} 秒, params: {kwargs}")
             return result
         except Exception as e:
             end = time.perf_counter()
-            print(f"[ERROR] {func.__name__} 执行异常，耗时: {end - start:.4f} 秒, params: {kwargs}")
+            _exec_time_logger.error(f"[ERROR] {func.__name__} 执行异常，耗时: {end - start:.4f} 秒, params: {kwargs}")
             raise e
 
     @wraps(func)
@@ -180,11 +183,11 @@ def print_execution_time(func):
         try:
             result = await func(*args, **kwargs)
             end = asyncio.get_running_loop().time()
-            print(f"[INFO] {func.__name__} 异步执行耗时: {end - start:.4f} 秒, params: {kwargs}")
+            _exec_time_logger.info(f"[INFO] {func.__name__} 异步执行耗时: {end - start:.4f} 秒, params: {kwargs}")
             return result
         except Exception as e:
             end = asyncio.get_running_loop().time()
-            print(f"[ERROR] {func.__name__} 异步执行异常，耗时: {end - start:.4f} 秒, params: {kwargs}")
+            _exec_time_logger.error(f"[ERROR] {func.__name__} 异步执行异常，耗时: {end - start:.4f} 秒, params: {kwargs}")
             raise e
 
     if asyncio.iscoroutinefunction(func):

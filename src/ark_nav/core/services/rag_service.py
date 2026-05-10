@@ -6,6 +6,10 @@ from typing import List, Dict, Any, Optional, Tuple
 import faiss
 from rank_bm25 import BM25Okapi
 
+from ark_nav.core.utils.nav_logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class HybridRetriever:
     """混合召回 + Reranker重排"""
@@ -24,24 +28,24 @@ class HybridRetriever:
         self.chains = chains
         texts = [c.get("text", "") for c in chains]
 
-        print("构建Dense索引...")
+        logger.info("构建Dense索引...")
         embeddings = await self.rag_models_handle.batch_encode.remote(
             texts, batch_size=32, show_progress_bar=True, normalize_embeddings=True
         )
         self.dense_index = faiss.IndexFlatIP(embeddings.shape[1])
         self.dense_index.add(embeddings.astype('float32'))
 
-        print("构建Sparse索引...")
+        logger.info("构建Sparse索引...")
         tokenized_corpus = [self._extract_keywords(text) for text in texts]
         self.sparse_index = BM25Okapi(tokenized_corpus)
 
-        print(f"索引构建完成: {len(chains)}条")
+        logger.info(f"索引构建完成: {len(chains)}条")
 
     def load_index(self, index_path, chains):
-        print("加载Dense索引...")
+        logger.info("加载Dense索引...")
         self.chains = chains
         self.dense_index = faiss.read_index(str(index_path))
-        print("Dense索引加载完毕...")
+        logger.info("Dense索引加载完毕...")
 
     def _extract_keywords(self, text: str) -> List[str]:
         """TF-IDF关键词提取"""
@@ -72,7 +76,7 @@ class HybridRetriever:
         k = min(recall_k, len(self.chains))
         sims, idxs = self.dense_index.search(query_emb, k)
         for sim, idx in list(zip(sims[0], idxs[0]))[:5]:
-            print(f"相似度: {sim}, 索引: {self.chains[idx]}")
+            logger.info(f"相似度: {sim}, 索引: {self.chains[idx]}")
         dense_candidates = {int(idx) for idx in idxs[0]}
         results = [
             (self.chains[int(idx)], sim) for sim, idx in list(zip(sims[0], idxs[0]))

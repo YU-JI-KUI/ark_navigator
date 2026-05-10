@@ -8,24 +8,29 @@ from pathlib import Path
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 
+from ark_nav.core.utils.nav_logger import get_logger, setup_logging
+
+setup_logging()
+logger = get_logger(__name__)
+
 
 def build_index(embedding_model,chains: List[Dict[str, Any]]):
     """构建双索引"""
     texts = [c.get("text", "") for c in chains]
 
-    print("构建Dense索引...")
+    logger.info("构建Dense索引...")
     embeddings = embedding_model.encode(
         texts, batch_size=32, show_progress_bar=True, normalize_embeddings=True
     )
     dense_index = faiss.IndexFlatIP(embeddings.shape[1])
     dense_index.add(embeddings.astype('float32'))
-    print(f"索引构建完成: {len(chains)}条")
+    logger.info(f"索引构建完成: {len(chains)}条")
     return dense_index
 
 
 def load_data(path: str) -> List[Dict[str, Any]]:
     """加载数据"""
-    print(f"加载数据: {path}")
+    logger.info(f"加载数据: {path}")
     file_path = Path(path)
 
     if not file_path.exists():
@@ -60,7 +65,7 @@ def load_data(path: str) -> List[Dict[str, Any]]:
         raise ValueError(f"不支持的格式: {ext}")
 
     chains = [c for c in chains if c.get("text", "").strip() and c.get("cot_feedback", "").strip()]
-    print(f"加载完成: {len(chains)}条")
+    logger.info(f"加载完成: {len(chains)}条")
     return chains
 
 
@@ -74,14 +79,14 @@ def init_cot_rules(embedding_model):
 def main():
     """初始化知识库和FAISS索引"""
 
-    print("初始化知识库...")
+    logger.info("初始化知识库...")
 
     # 创建数据目录
     data_dir = Path("data")
     data_dir.mkdir(exist_ok=True)
 
     # 创建FAISS索引
-    print("创建FAISS索引...")
+    logger.info("创建FAISS索引...")
 
     model = SentenceTransformer("./models/bge-base-zh-v1.5")
 
@@ -91,9 +96,9 @@ def main():
     index_path = data_dir / "faiss_index"
     faiss.write_index(index, str(index_path))
 
-    print(f"FAISS索引已保存: {index_path}")
-    print(f"向量维度: 向量数量: {index.ntotal}")
-    print("\n初始化完成! ")
+    logger.info(f"FAISS索引已保存: {index_path}")
+    logger.info(f"向量维度: 向量数量: {index.ntotal}")
+    logger.info("\n初始化完成! ")
 
 
 if __name__ == "__main__":

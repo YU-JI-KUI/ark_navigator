@@ -294,4 +294,4 @@ if __name__ == "__main__":
     classifier = IntentClassifier(app_key="Ym5NPfPrgp8sZ8LkcpR5pqQwsLEoo4z0",
                                   app_secret="OYqUvt8RNtvW7DqPDqM8SfWdtcroQCq5")
     result = asyncio.run(classifier.classify_user_intent_advance("安有护"))
-    print(result)
+    logger.info(result)

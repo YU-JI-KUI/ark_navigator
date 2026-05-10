@@ -241,7 +241,7 @@ async def training_data_augmentation():
             except:
                 continue
     except Exception as e:
-        print(f"出错了！！{e}")
+        logger.error(f"出错了！！{e}", exc_info=True)
 
     result_df = pd.DataFrame(results)
 
@@ -250,7 +250,7 @@ async def training_data_augmentation():
 
     # 4. 保存
     final_df.to_csv("D_1229_all_std-1231-std.csv", index=False, encoding='utf-8-sig')
-    print(f"清洗完成! 结果已保存!")
+    logger.info(f"清洗完成! 结果已保存!")
 
 
 async def online_bad_case():
@@ -290,7 +290,7 @@ async def online_bad_case():
             except:
                 continue
     except Exception as e:
-        print(f"出错了！！{e}")
+        logger.error(f"出错了！！{e}", exc_info=True)
 
     result_df = pd.DataFrame(results)
 
@@ -299,7 +299,7 @@ async def online_bad_case():
 
     # 4. 保存
     final_df.to_csv("badcase1226_cot.csv", index=False, encoding='utf-8-sig')
-    print(f"清洗完成! 结果已保存!")
+    logger.info(f"清洗完成! 结果已保存!")
 
 
 if __name__ == "__main__":

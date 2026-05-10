@@ -35,7 +35,7 @@ class ShouxianBertDeployment:
 
         self.logger = get_logger("ark_nav")
         self.device = "cuda" if torch.cuda.is_available() and settings.use_gpu else "cpu"
-        print(f"[BERT] 加载模型到 {self.device}")
+        self.logger.info(f"[BERT] 加载模型到 {self.device}")
         self.is_model_loaded = False
         self.tokenizer = AutoTokenizer.from_pretrained(settings.bert_model)
         self.model = AutoModelForSequenceClassification.from_pretrained(settings.bert_model, num_labels=len(LABEL_LIST))
@@ -49,7 +49,7 @@ class ShouxianBertDeployment:
         self.logger.info(f"模型加载测试结果: {output}")
         self.is_model_loaded = True
 
-        print(f"[BERT] 模型加载完成")
+        self.logger.info(f"[BERT] 模型加载完成")
 
     def compute_energy(self,logits: torch.Tensor, temperature: float = 1.0) -> torch.Tensor:
         """
@@ -77,7 +77,7 @@ class ShouxianBertDeployment:
         """
         energy_threshold_low = threshold_low
         energy_threshold_high = threshold_high
-        print(f"阈值已更新: low={threshold_low:.3f}, high={threshold_high:.3f}")
+        self.logger.info(f"阈值已更新: low={threshold_low:.3f}, high={threshold_high:.3f}")
         return "success"
 
     def classify_intent_based_energy(self,logits, pred_label_idx) -> Dict:
@@ -154,9 +154,11 @@ if __name__ == "__main__":
     ray.init()
     serve.run(ShouxianBertDeployment.bind())
 
+    _main_logger = get_logger(__name__)
+
     async def test():
         handle = serve.get_deployment_handle("xiezhi-bert", "default")
         score = await handle.classify_user_intent.remote("你好")
-        print(f"一致性分数: {score}")
+        _main_logger.info(f"一致性分数: {score}")
 
     asyncio.run(test())

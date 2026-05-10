@@ -2,7 +2,6 @@
 import os
 from typing import Dict, Any
 from ray import serve
-import traceback
 
 from ark_nav.core.utils.nav_logger import get_logger
 from ark_nav.core.utils.httpx_deployment_decorator import with_http_client
@@ -48,8 +47,7 @@ class NavAgentDeployment:
             await self.agent_pfm_kb_svc.load_data(request.kg_id, request.is_reload)
             return {"status": "success"}
         except Exception as e:
-            traceback.print_exc()
-            logger.error(f"重置寿险 FAISS 索引异常:{str(e)}")
+            logger.error(f"重置寿险 FAISS 索引异常:{str(e)}", exc_info=True)
             return {"status": f"failed -> {str(e)}"}
 
     async def search(self, request: SearchIntentRequest):

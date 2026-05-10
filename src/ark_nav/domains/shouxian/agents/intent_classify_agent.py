@@ -39,7 +39,7 @@ class IntentClassifyAgentDeployment:
 
         self.intent_cot_classifier = IntentCOTClassifier(rag_models_handle, bert_handle)
         self.logger = get_logger("ark_nav")
-        print("[IntentClassifyAgent] 初始化完成")
+        self.logger.info("[IntentClassifyAgent] 初始化完成")
 
     @print_execution_time
     async def classify_intent(self, request: IntentRequest) -> IntentResult:

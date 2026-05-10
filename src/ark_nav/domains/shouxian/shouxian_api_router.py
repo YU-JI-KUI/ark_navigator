@@ -9,9 +9,8 @@ import asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from ark_nav.core.services.data_pusher_service import DataPusherService
-from ark_nav.domains.shouxian.intent_classifier_advance import IntentResult
-from ark_nav.core.utils.nav_logger import get_logger, push_to_argilla
-from ark_nav.domains.shouxian.router_schemas import IntentRequest, ChatCompletionRequest, SearchIntentRequest, AgentPfmKbRequest
+from ark_nav.core.utils.nav_logger import get_logger
+from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, SearchIntentRequest, AgentPfmKbRequest
 from ark_nav.core.services.xiezhi_http import init_prompt_from_agent_rag
 from ark_nav.core.utils.broadcast_utils import broadcast
 
@@ -89,17 +88,6 @@ def create_shouxian_router(intent_agent_handle, shouxian_nav_agent):
             "xiezhi": os.getenv("XIEZHI_PROMPT"),
             "baize": os.getenv("BAIZE_PROMPT")
         }
-
-    @router.post("/classify")
-    # @push_to_argilla((lambda data: PUSHER.push(data)))
-    async def classify(request: IntentRequest) -> IntentResult:
-        """
-        调用方：画布智能体，现在已经不用了，可以删除。
-        接收 app_key、app_secret 和 user_message，返回意图分类结果。
-        打印请求头和请求体日志。
-        """
-        result = await intent_agent_handle.classify_intent.remote(request)
-        return result
 
     @router.post("/search")
     async def search(request: SearchIntentRequest):

@@ -570,7 +570,7 @@ def main():
     result = asyncio.run(_get_faq_table_data(AgentPfmConfig.KG_ID))
     logger.info(f"=========={len(result)}==========")
     for item in result[:5]:  # 仅展示前5条作为示例
-        print(item)
+        logger.info(item)
 
 
 if __name__ == '__main__':
