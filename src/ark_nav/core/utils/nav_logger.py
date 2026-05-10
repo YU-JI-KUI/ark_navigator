@@ -14,14 +14,8 @@ from contextvars import ContextVar
 
 import structlog
 from typing import Optional
-from datetime import datetime
 import time
-from typing import Callable, Any
 from functools import wraps
-
-from fastapi import Request
-
-from ark_nav.core.services.data_masking_service import DataMaskingService
 
 _trace_id_var: ContextVar[Optional[str]] = ContextVar('trace_id', default=None)
 
@@ -194,44 +188,3 @@ def print_execution_time(func):
         return async_wrapper
     else:
         return sync_wrapper
-
-
-FILTER_INSTANCE = DataMaskingService()
-
-
-def push_to_argilla(push_func: Callable[[dict], Any]):
-    def decorator(func: Callable):
-        @wraps(func)
-        async def wrapper(request: any, raw_request: Request):
-            # 1. 执行原始函数
-            response = await func(request, raw_request)
-            try:
-                intention = response.result if hasattr(response, 'result') else response.get('result', "unknown")
-
-                filter = FILTER_INSTANCE
-                masked_user_message = await filter.mask_sensitive_info(request.user_message)
-                history = [{"role": msg.role, "text": msg.text} for msg in request.history] if request.history else []
-
-                # 2. 构建日志条目
-                log_entry = {
-                    "question": masked_user_message,
-                    "intention": intention,
-                    "request_id": request.request_id,
-                    "user_id": request.user_id,
-                    "history": history,
-                    "session_id": request.session_id,
-                    "timestamp": datetime.now().isoformat(),
-                    "metadata": request.metadata
-                }
-
-                # 3. 推送到argilla
-                await push_func(log_entry)
-
-            except Exception as e:
-                logging.error(f"[ERROR] {func.__name__} 执行异常，{e}")
-
-            return response
-
-        return wrapper
-
-    return decorator

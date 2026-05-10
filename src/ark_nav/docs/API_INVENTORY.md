@@ -94,7 +94,8 @@ HTTP GET → refresh_root()
 > `调用方：画布智能体，现在已经不用了，可以删除。`
 
 **额外证据**：
-- 装饰器 `@push_to_argilla(...)` 已被注释掉（shouxian_api_router.py:94）
+- 装饰器 `@push_to_argilla(...)` 在删除前已被注释掉（shouxian_api_router.py:94）
+  - 注：该装饰器及配套的 DataPusherService 已于 2026-05 整体砍除
 - 同名 endpoint 在 ylx 侧也存在（ylx_api_router.py:32），含义类似
 
 **调用链**：
@@ -205,7 +206,8 @@ HTTP POST → classify()
 - 寿险版已被代码注释标记为废弃
 - 养老险版**没有标记**，但调用方也未知 —— Kris 需要进一步确认
 
-**装饰器**：`@push_to_argilla(...)` 仍激活（ylx_api_router.py:33），与寿险版被注释相反
+**装饰器**：原 `@push_to_argilla(...)` 在 ylx 侧仍激活（ylx_api_router.py:33），与寿险版被注释相反。
+该装饰器及配套的 DataPusherService 已于 2026-05 整体砍除。
 
 ---
 

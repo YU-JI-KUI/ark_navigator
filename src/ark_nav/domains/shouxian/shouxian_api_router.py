@@ -8,15 +8,12 @@ from ark_agentic.core.stream.output_formatter import create_formatter
 import asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from ark_nav.core.services.data_pusher_service import DataPusherService
 from ark_nav.core.utils.nav_logger import get_logger
 from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, SearchIntentRequest, AgentPfmKbRequest
 from ark_nav.core.services.xiezhi_http import init_prompt_from_agent_rag
 from ark_nav.core.utils.broadcast_utils import broadcast
 
 logger = get_logger("ark_nav")
-
-PUSHER = DataPusherService(url=os.getenv("DATAPULSE_URL"), channel="shouXian")
 
 
 class ThresholdUpdateRequest(BaseModel):

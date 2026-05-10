@@ -25,7 +25,7 @@
 
 ## 二、A 类：声明 + 在用（保留）
 
-总数 **42 个**。按业务分组：
+总数 **41 个**（原 42 个；2026-05 砍除 DataPusherService 后 `DATAPULSE_URL` 移至底部"已删除"区）。按业务分组：
 
 ### 2.1 应用基础（3 个）
 
@@ -121,11 +121,10 @@
 | `ESG_BONUS_CHAT_ADDR` | shouxian_nav_service.py:364 |
 | ~~`ESG_TOKEN_EXPIRY_4_BONUS`~~ | ❌ **未引用**（见 B 类） |
 
-### 2.10 数据推送（1 个）
+### 2.10 ~~数据推送~~（已删除）
 
-| 变量 | 引用位置 |
-|------|---------|
-| `DATAPULSE_URL` | shouxian_api_router.py:20; ylx_api_router.py:17 |
+> 该章节原本声明 `DATAPULSE_URL`，对应 `data_pusher_service.py` 中的 `DataPusherService` 类。
+> 该功能在 2026-05 已整体砍除（见底部"已删除的配置"区块）。
 
 ### 2.11 RAG / FAISS / 本地知识库（2 个）
 
@@ -266,11 +265,12 @@ timeout=int(os.getenv("RAG_EXECUTION_TIMEOUT"), 600)
 
 | 分类 | 数量 | 阶段 3 动作 |
 |------|------|-----------|
-| A 类（活，保留） | 42 | 重写 sample 时分组、加注释 |
+| A 类（活，保留） | 41 | 重写 sample 时分组、加注释（原 42，砍除 DATAPULSE_URL 后剩 41） |
 | B 类（死，删除） | 9 | 从 sample 删除 + 注释说明删除原因 |
 | C 类（隐，补声明） | 5 | 加到 sample（prompt 类加特殊章节） |
 | D 类（疑，文档化） | 3 组 | 仅在 sample 加 ⚠️ 注释 |
-| **sample 现共 50 个** → **阶段 3 后 ≈ 46 个** | | |
+| 功能砍除（DataPusherService） | 1 | 砍除 DATAPULSE_URL（2026-05） |
+| **sample 现共 50 个** → **第一轮整改后 46 个** → **DataPusherService 砍除后 45 个** | | |
 
 ---
 
