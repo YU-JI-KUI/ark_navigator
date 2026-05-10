@@ -5,7 +5,7 @@
 import httpx
 import json
 
-from ark_nav.core.utils.agent_platform_config import AgentPfmConfig
+from ark_nav.core.utils.agent_platform_config import AgentPlatformConfig
 from ark_nav.core.utils.http_client_manager import get_client
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 
@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 @print_execution_time
 async def _get_agent_auth_token(client: httpx.AsyncClient) -> str | None:
-    auth_url = f"{AgentPfmConfig.HOST}{AgentPfmConfig.TOKEN_URL}"
+    auth_url = f"{AgentPlatformConfig.HOST}{AgentPlatformConfig.TOKEN_URL}"
 
     headers = {
         "Content-Type": "application/json; charset=utf-8",
@@ -22,8 +22,8 @@ async def _get_agent_auth_token(client: httpx.AsyncClient) -> str | None:
     }
 
     payload = {
-        "appId": AgentPfmConfig.TENANT_ID,
-        "appSecret": AgentPfmConfig.APP_SEC
+        "appId": AgentPlatformConfig.TENANT_ID,
+        "appSecret": AgentPlatformConfig.APP_SEC
     }
 
     logger.info(f"Calling agent model to get the auth token")

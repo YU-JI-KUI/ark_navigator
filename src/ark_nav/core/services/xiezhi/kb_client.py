@@ -14,7 +14,7 @@ import json
 from typing import List, Optional, Dict, Any
 
 from ark_nav.core.services.xiezhi.auth import _get_agent_auth_token
-from ark_nav.core.utils.agent_platform_config import AgentPfmConfig
+from ark_nav.core.utils.agent_platform_config import AgentPlatformConfig
 from ark_nav.core.utils.http_client_manager import get_client
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 
@@ -80,35 +80,35 @@ async def _get_kb_url() -> str:
     """
     构建 KB 服务的完整 URL。
     """
-    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_QUERY_URL}"
+    return f"{AgentPlatformConfig.HOST}{AgentPlatformConfig.RAG_QUERY_URL}"
 
 
 async def _get_faq_page_url() -> str:
     """
     构建 FAQ PAGE 服务的完整 URL。
     """
-    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_PAGE_URL}"
+    return f"{AgentPlatformConfig.HOST}{AgentPlatformConfig.RAG_FAQ_PAGE_URL}"
 
 
 async def _get_faq_page_similar_url() -> str:
     """
     构建 FAQ PAGE SIMILAR 服务的完整 URL。
     """
-    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_PAGE_SIMILAR_URL}"
+    return f"{AgentPlatformConfig.HOST}{AgentPlatformConfig.RAG_FAQ_PAGE_SIMILAR_URL}"
 
 
 async def _get_faq_table_detail_url() -> str:
     """
     构建 FAQ TABLE DETAIL 服务的完整 URL。
     """
-    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_TABLE_DETAIL_URL}"
+    return f"{AgentPlatformConfig.HOST}{AgentPlatformConfig.RAG_FAQ_TABLE_DETAIL_URL}"
 
 
 async def _get_faq_table_list_url() -> str:
     """
     构建 FAQ TABLE LIST 服务的完整 URL。
     """
-    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_TABLE_LIST_URL}"
+    return f"{AgentPlatformConfig.HOST}{AgentPlatformConfig.RAG_FAQ_TABLE_LIST_URL}"
 
 
 async def search_kb(
@@ -227,7 +227,7 @@ async def _get_faq_page_data(kb_id: str) -> List[Dict[str, Any]]:
         }
 
         payload_template = {
-            'tenantId': AgentPfmConfig.TENANT_ID,
+            'tenantId': AgentPlatformConfig.TENANT_ID,
             'userName': 'super-agent',
             'knId': kb_id,
             'pageSize': 500,
@@ -269,7 +269,7 @@ async def _get_faq_page_data(kb_id: str) -> List[Dict[str, Any]]:
                     labels = [kn_label.get("name", "") for kn_label in kn_label_list if kn_label.get("name", "")]
                     if similar_count > len(similar_question_list):
                         payload_similar = {
-                            'tenantId': AgentPfmConfig.TENANT_ID,
+                            'tenantId': AgentPlatformConfig.TENANT_ID,
                             'userName': 'super-agent',
                             'standardQid': standard_qid,
                             'pageSize': 500,
@@ -332,7 +332,7 @@ async def _get_faq_table_data(kb_id: str) -> List[Dict[str, Any]]:
         }
 
         payload_template = {
-            'tenantId': AgentPfmConfig.TENANT_ID,
+            'tenantId': AgentPlatformConfig.TENANT_ID,
             'userName': 'super-agent',
             'knId': kb_id,
             'pageSize': 500,
@@ -405,7 +405,7 @@ async def fetch_rag(query: str, kb_type: List[str], kb_ids: List[str] = None, la
     answers = await search_kb(
         query=query,
         kb_type=kb_type,
-        kb_ids=[AgentPfmConfig.KG_ID] if kb_ids is None else kb_ids,
+        kb_ids=[AgentPlatformConfig.KG_ID] if kb_ids is None else kb_ids,
         labels=labels,
         score_threshold=score_threshold
     )

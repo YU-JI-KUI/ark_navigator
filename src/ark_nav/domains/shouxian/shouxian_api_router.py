@@ -10,7 +10,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from ark_nav.core.utils.nav_logger import get_logger
 from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, SearchIntentRequest, AgentPfmKbRequest
-from ark_nav.core.services.xiezhi_http import init_prompt_from_agent_rag
+from ark_nav.core.services.xiezhi_http import bootstrap_prompts_from_kb
 from ark_nav.core.utils.broadcast_utils import broadcast
 
 logger = get_logger("ark_nav")
@@ -80,7 +80,7 @@ def create_shouxian_router(intent_agent_handle, shouxian_nav_agent):
 
     @router.get("/refresh_prompt")
     async def refresh_root():
-        await init_prompt_from_agent_rag()
+        await bootstrap_prompts_from_kb()
         return {
             "xiezhi": os.getenv("XIEZHI_PROMPT"),
             "baize": os.getenv("BAIZE_PROMPT")

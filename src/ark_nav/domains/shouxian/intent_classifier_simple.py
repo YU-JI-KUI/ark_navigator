@@ -1,6 +1,6 @@
 import os
 
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api
+from ark_nav.core.services.xiezhi_http import call_llm
 from ark_nav.core.utils.nav_logger import get_logger
 
 logger = get_logger("ark_nav")
@@ -43,7 +43,7 @@ async def classify_user_intent(
     logger.info(f"意图识别Query: {user_message}")
 
     try:
-        response = await call_bigmodel_api(
+        response = await call_llm(
             query=query,
             scene_id=scene_id,
             app_key=app_key,

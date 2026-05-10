@@ -1,6 +1,11 @@
 """寿险导航主服务编排器。
 
-从 shouxian_nav_service.py 拆分而来（2026-05），保持 ShouXianNavService 行为一字不改。
+从 shouxian_nav_service.py 拆分而来（2026-05），保持原 class 行为一字不改。
+2026-05 命名规范整改：
+- 原类名 ShouXianNavService → ShouxianNavOrchestrator
+- 修复 PEP 8 大小写（"ShouXian" 应为 "Shouxian"）
+- 用 Orchestrator 后缀更准确反映"编排器"角色（不是简单 Service）
+- 旧名作为 alias 保留至下次 release。
 
 负责：
 - 主流程 run()：意图先验 → RAG 快速命中 → 大模型分类 → 寿险中控
@@ -23,21 +28,21 @@ from ark_nav.domains.shouxian.services.shouxian._history_utils import (
     _parse_rag_answer,
     process_history,
 )
-from ark_nav.domains.shouxian.services.shouxian.classify_service import ClassifyService
+from ark_nav.domains.shouxian.services.shouxian.classify_service import IntentClassificationStrategy
 from ark_nav.domains.shouxian.services.shouxian.intent_recognition import (
     IntentRecognitionService,
 )
-from ark_nav.domains.shouxian.services.shouxian.rag_service import RagService
+from ark_nav.domains.shouxian.services.shouxian.rag_service import ShouxianRagRetriever
 
 logger = get_logger(__name__)
 
 
-class ShouXianNavService:
+class ShouxianNavOrchestrator:
 
     def __init__(self, shouxian_intent_agent, agent_pfm_kb_svc):
         self.intent_recognition_service = IntentRecognitionService()
-        self.rag_service = RagService(agent_pfm_kb_svc)
-        self.classify_service = ClassifyService(shouxian_intent_agent)
+        self.rag_service = ShouxianRagRetriever(agent_pfm_kb_svc)
+        self.classify_service = IntentClassificationStrategy(shouxian_intent_agent)
 
     @staticmethod
     def postprocess(request: ChatCompletionRequest, response: ChatCompletionResponse) -> Dict[str, Any]:
@@ -142,7 +147,7 @@ class ShouXianNavService:
 
             if intention == "life_insurance":
                 logger.info(f"msg_id = {request.msg_id}, 已经存在意图，直接分发给寿险中台")
-                result = await self._do_intent_recognition(request, state)
+                result = await self._recognize_intent(request, state)
             elif intention == "rejection":
                 logger.info(f"msg_id = {request.msg_id}, 已经存在意图，直接拒识")
                 result = self.get_rejection()
@@ -152,14 +157,14 @@ class ShouXianNavService:
                 result = _parse_rag_answer(rag_answer)
                 if result.get("sa_business_type") != "ACTIVITY":
                     if rag_answer in [LIFE_INSURANCE]:
-                        result = await self._do_intent_recognition(request, state)
+                        result = await self._recognize_intent(request, state)
                     elif rag_answer in [REJECTION]:
                         result = self.get_rejection()
                     else:
-                        model_return = await self.classify_service.shouxian_classify_intent(
+                        model_return = await self.classify_service.classify_intent(
                             msg_id=msg_id, message=request.message, reject_reconfirm=True, history=state.get("history"))
                         if model_return in [LIFE_INSURANCE]:
-                            result = await self._do_intent_recognition(request, state)
+                            result = await self._recognize_intent(request, state)
                         else:
                             result = self.get_rejection()
 
@@ -199,7 +204,7 @@ class ShouXianNavService:
             elif rag_answer in [REJECTION]:
                 final_result = "rejection"
             else:
-                model_return = await self.classify_service.shouxian_classify_intent(request.msg_id, request.message, request.reject_reconfirm, history=[])
+                model_return = await self.classify_service.classify_intent(request.msg_id, request.message, request.reject_reconfirm, history=[])
                 if model_return in [LIFE_INSURANCE]:
                     final_result = "life_insurance"
                 else:
@@ -211,7 +216,7 @@ class ShouXianNavService:
             logger.error(f"{request.msg_id}, 请求异常:{str(e)}", exc_info=True)
             return self.post_search(str(e))
 
-    async def _do_intent_recognition(self, request: ChatCompletionRequest, state: Dict[str, Any]) -> Dict[str, Any]:
+    async def _recognize_intent(self, request: ChatCompletionRequest, state: Dict[str, Any]) -> Dict[str, Any]:
         result = await self.intent_recognition_service.run(
             req_id=request.msg_id,
             to_agent=state.get("to_agent", ""),
@@ -219,3 +224,8 @@ class ShouXianNavService:
             chat_agent_req=state.get("chat_agent_req"),
         )
         return result
+
+
+# DEPRECATED: 用 ShouxianNavOrchestrator 代替（同时修复 PEP 8 大小写：ShouXian → Shouxian），
+# 保留至下次 release 后删除（命名规范整改 2026-05）
+ShouXianNavService = ShouxianNavOrchestrator

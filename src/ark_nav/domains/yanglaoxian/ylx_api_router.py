@@ -8,7 +8,7 @@ from ark_agentic.core.stream.output_formatter import create_formatter
 import asyncio
 from ark_nav.core.utils.broadcast_utils import broadcast
 from ark_nav.core.utils.nav_logger import get_logger
-from ark_nav.core.services.xiezhi_http import init_prompt_from_agent_rag
+from ark_nav.core.services.xiezhi_http import bootstrap_prompts_from_kb
 from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest, AgentPfmKbRequest
 
 logger = get_logger("ark_nav")
@@ -19,7 +19,7 @@ def create_router(agent_handler):
 
     @router.get("/refresh")
     async def refresh():
-        await init_prompt_from_agent_rag()
+        await bootstrap_prompts_from_kb()
         return {
             "ylx": os.getenv("YLX_PROMPT")
         }

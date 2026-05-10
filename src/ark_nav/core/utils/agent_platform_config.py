@@ -1,7 +1,13 @@
+"""智能体平台配置（环境变量映射）。
+
+历史命名：原类名 AgentPfmConfig（Pfm = Platform 缩写），可读性差。
+2026-05 命名规范第一轮整改：重命名为 AgentPlatformConfig，旧名保留为 alias，
+预计下次 release 后删除（约 1 个迭代周期）。
+"""
 import os
 
 
-class AgentPfmConfig:
+class AgentPlatformConfig:
     HOST = os.getenv("AGENT_PLATFORM_HOST")
     TOKEN_URL = os.getenv("AGENT_PLATFORM_TOKEN_URL")
     RAG_QUERY_URL = os.getenv("AGENT_PLATFORM_RAG_QUERY_URL")
@@ -22,3 +28,7 @@ class AgentPfmConfig:
         missing = [k for k in required if not getattr(cls, k)]
         if missing:
             raise ValueError(f"Missing required env vars: {missing}")
+
+
+# DEPRECATED: 用 AgentPlatformConfig 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+AgentPfmConfig = AgentPlatformConfig

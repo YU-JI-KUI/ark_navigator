@@ -1,6 +1,8 @@
-"""寿险 RAG 服务（本地 KG / 远程 RAG 二选一）。
+"""寿险 RAG 检索器（本地 KG / 远程 RAG 二选一）。
 
 从 shouxian_nav_service.py 拆分而来（2026-05），保持原 class 行为一字不改。
+2026-05 命名规范整改：原类名 RagService → ShouxianRagRetriever（更贴切：
+实际是检索器而不是 service），旧名作为 alias 保留至下次 release。
 
 负责：
 - 根据 ENABLE_LOCAL_KG 环境变量切换检索路径
@@ -8,7 +10,7 @@
 
 ⚠️ 注意：与本目录的"rag_service"模块名相同的类位于 domains/shouxian/services/shouxian_rag_service.py，
 不是同一个东西。前者是基于 FAISS+HybridRetriever 的本地检索器，
-此处的 RagService 只是对其与远端 fetch_rag 的薄封装。
+此处的 ShouxianRagRetriever 只是对其与远端 fetch_rag 的薄封装。
 """
 import os
 
@@ -21,7 +23,7 @@ from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 logger = get_logger(__name__)
 
 
-class RagService:
+class ShouxianRagRetriever:
 
     def __init__(self, agent_pfm_kb_svc):
         self.agent_pfm_kb_svc = agent_pfm_kb_svc
@@ -46,3 +48,7 @@ class RagService:
             logger.info("query from remote knowledge base")
             rag_answer = await fetch_rag(query=message, kb_type=["faq"], kb_ids=[os.getenv("SHOUXIAN_AGENT_PLATFORM_KG_ID")])
             return rag_answer
+
+
+# DEPRECATED: 用 ShouxianRagRetriever 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+RagService = ShouxianRagRetriever

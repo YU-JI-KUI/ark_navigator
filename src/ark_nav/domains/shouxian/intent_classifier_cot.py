@@ -9,22 +9,17 @@ import asyncio
 import json
 import os
 from typing import List, Dict, Any, Optional,Tuple
-from enum import Enum
+from ark_nav.domains.shouxian.intents import IntentType  # noqa: F401  保留 re-export 以兼容旧 import 路径
 import pandas as pd
 from tqdm.asyncio import tqdm_asyncio
 
 from ark_nav.domains.shouxian.prompts import GENERATE_COT_PROMPT_V1, INTENTION_CLASSIFY_COT_PROMPT, INTENTION_CLASSIFY_TRAIN_COT_PROMPT
 from ark_nav.domains.shouxian.services.shouxian_rag_service import ShouxianRAGService
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api
+from ark_nav.core.services.xiezhi_http import call_llm
 from ark_nav.core.utils.nav_logger import get_logger
 from ark_nav.domains.shouxian.router_schemas import IntentResult, Message
 
 logger = get_logger("ark_nav")
-
-class IntentType(Enum):
-    """意图类型枚举"""
-    LIFE_INSURANCE = "寿险意图"  # 寿险相关意图
-    REJECTED = "拒识"  # 无法识别的意图
 
 class IntentCOTClassifier:
 
@@ -82,7 +77,7 @@ class IntentCOTClassifier:
 
         # logger.info(f"查询到思维链例子: {examples}")
         try:
-            response = await call_bigmodel_api(
+            response = await call_llm(
                 query=prompt,
                 scene_id=scene_id,
                 app_key=intent_rewrite_app_key,
@@ -133,7 +128,7 @@ class IntentCOTClassifier:
 
         # logger.info(f"查询到思维链例子: {examples}")
         try:
-            response = await call_bigmodel_api(
+            response = await call_llm(
                 query=prompt,
                 scene_id=scene_id,
                 app_key=intent_rewrite_app_key,
@@ -174,7 +169,7 @@ class IntentCOTClassifier:
         query = INTENTION_CLASSIFY_TRAIN_COT_PROMPT.format(question = user_message)
         logger.info(f"意图识别Query: {user_message}")
         try:
-            response = await call_bigmodel_api(
+            response = await call_llm(
                 query=query,
                 scene_id=scene_id,
                 app_key=app_key,

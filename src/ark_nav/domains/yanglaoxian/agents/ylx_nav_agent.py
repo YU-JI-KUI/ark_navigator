@@ -3,14 +3,14 @@ import time
 from typing import List, Optional, Dict, Any
 from ray import serve
 
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api, fetch_rag
+from ark_nav.core.services.xiezhi_http import call_llm, fetch_rag
 from ark_nav.core.utils.nav_logger import get_logger, setup_logging
 from ark_nav.domains.shouxian.router_schemas import IntentResult
-from ark_nav.core.utils.llm_platform_config import LLMPlfConfig
+from ark_nav.core.utils.llm_platform_config import LLMPlatformConfig
 from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest, YLXResponse, XiaoAnRobotRequests, AgentPfmKbRequest
-from ark_nav.domains.yanglaoxian.services.onekey_service import OneKeyService, XiaoAnRobot
+from ark_nav.domains.yanglaoxian.services.onekey_service import OneKeyService, XiaoAnRobotClient
 from ark_nav.core.utils.httpx_deployment_decorator import with_http_client
-from ark_nav.core.services.agent_pfm_kb_service import AgentPfmKbService
+from ark_nav.core.services.agent_pfm_kb_service import KnowledgeBaseService
 
 DEFAULT_PROMPT = """
 你是一个意图分类专家，你的职责仅限于"识别与判断"。你需要根据用户提问的'来源'和'问题'，进行以下意图的判断，禁止提供任何建议、解决方案或行动指引。
@@ -48,12 +48,12 @@ class NavYLXAgentDeployment:
     def __init__(self, rag_models_handle):
         setup_logging()
         self.rag_models_handle = rag_models_handle
-        self.app_key = LLMPlfConfig.YLX_LLM_APP_KEY
-        self.app_secret = LLMPlfConfig.YLX_LLM_APP_SECRET
-        self.scene_id = LLMPlfConfig.YLX_LLM_SCENE_ID
+        self.app_key = LLMPlatformConfig.YLX_LLM_APP_KEY
+        self.app_secret = LLMPlatformConfig.YLX_LLM_APP_SECRET
+        self.scene_id = LLMPlatformConfig.YLX_LLM_SCENE_ID
         self.system_prompt = os.getenv("YLX_PROMPT", DEFAULT_PROMPT)
-        self.robot = XiaoAnRobot()
-        self.agent_pfm_kb_svc = AgentPfmKbService(
+        self.robot = XiaoAnRobotClient()
+        self.agent_pfm_kb_svc = KnowledgeBaseService(
             rag_models_handle, domain="yanglaoxian", kg_id=os.getenv("AGENT_PLATFORM_KG_ID"))
         self.onekey_svc = OneKeyService(self.agent_pfm_kb_svc)
         # self.agent_pfm_kb_svc.load_index()
@@ -85,7 +85,7 @@ class NavYLXAgentDeployment:
             question = QUERY_TEMPLATE.format(input=query)
             query = f"{self.system_prompt} {question}"
             logger.info(f"{msg_id}, 养老险意图识别Query: {question}")
-            response = await call_bigmodel_api(
+            response = await call_llm(
                 query=query,
                 scene_id=self.scene_id,
                 app_key=self.app_key,

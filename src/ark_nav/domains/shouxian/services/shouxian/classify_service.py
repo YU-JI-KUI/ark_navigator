@@ -1,6 +1,10 @@
-"""寿险意图分类服务（调用 IntentClassifyAgentDeployment）。
+"""寿险意图分类策略（调用 IntentClassifierDeployment）。
 
 从 shouxian_nav_service.py 拆分而来（2026-05），保持原 class 行为一字不改。
+2026-05 命名规范整改：
+- 原类名 ClassifyService → IntentClassificationStrategy（更贴切：实际是策略选择器）
+- 原方法名 shouxian_classify_intent → classify_intent（去冗余 shouxian 前缀，类已在 shouxian 包下）
+- 旧名作为 alias 保留至下次 release。
 
 负责：
 - 包装 IntentRequest 调用大模型分类
@@ -21,13 +25,13 @@ from ark_nav.domains.shouxian.services.shouxian._history_utils import (
 logger = get_logger(__name__)
 
 
-class ClassifyService:
+class IntentClassificationStrategy:
 
     def __init__(self, shouxian_intent_agent):
         self.shouxian_intent_agent = shouxian_intent_agent
 
     @print_execution_time
-    async def shouxian_classify_intent(self, msg_id: str, message: str, reject_reconfirm, history):
+    async def classify_intent(self, msg_id: str, message: str, reject_reconfirm, history):
         """
         调用大模型平台，如果结果不是【拒识】or【寿险意图】则默认【寿险意图】
         """
@@ -42,6 +46,9 @@ class ClassifyService:
         else:
             return LIFE_INSURANCE
 
+    # DEPRECATED: 用 classify_intent 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+    shouxian_classify_intent = classify_intent
+
     @cached(ttl=600, namespace="shouxian", serializer=StringSerializer(), noself=True)
     async def _classify_intent(self, message: str, reject_reconfirm, history):
         request = IntentRequest(
@@ -53,3 +60,7 @@ class ClassifyService:
         )
         response: IntentResult = await self.shouxian_intent_agent.classify_intent.remote(request)
         return response.result
+
+
+# DEPRECATED: 用 IntentClassificationStrategy 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+ClassifyService = IntentClassificationStrategy

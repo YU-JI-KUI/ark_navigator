@@ -1,6 +1,13 @@
 """Agent 层"""
 
 from ark_nav.domains.shouxian.agents.nav_agent import NavAgentDeployment
-from ark_nav.domains.shouxian.agents.intent_classify_agent import IntentClassifyAgentDeployment
+from ark_nav.domains.shouxian.agents.intent_classify_agent import (
+    IntentClassifierDeployment,
+    IntentClassifyAgentDeployment,  # DEPRECATED alias，兼容下次 release
+)
 
-__all__ = ["NavAgentDeployment", "IntentClassifyAgentDeployment"]
+__all__ = [
+    "NavAgentDeployment",
+    "IntentClassifierDeployment",
+    "IntentClassifyAgentDeployment",  # DEPRECATED alias
+]

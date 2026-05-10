@@ -1,12 +1,14 @@
 """寿险中控（红利渠道）HTTP 客户端。
 
 从 shouxian_nav_service.py 拆分而来（2026-05），保持原 class 行为一字不改。
+2026-05 命名规范整改：原类名 BonusChatAgent，但实际是普通 HTTP 客户端
+（不是 LLM agent），重命名为 BonusChatClient，旧名作为 alias 保留至下次 release。
 
 负责：
 - ESG OAuth access_token 的获取与 30 天 TTL 缓存（实例属性）
-- 调用寿险中控 business_deal 接口（含 token 失效自动重试一次）
+- 调用寿险中控 submit_business_request 接口（含 token 失效自动重试一次）
 
-注意：每个 IntentRecognitionService 实例化时都会 new 一个 BonusChatAgent，
+注意：每个 IntentRecognitionService 实例化时都会 new 一个 BonusChatClient，
 故 token 缓存以"实例"为粒度（详见 docs/MODULE_MAP.md 阶段 5 风险点 1）。
 """
 import datetime
@@ -19,7 +21,7 @@ from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 logger = get_logger(__name__)
 
 
-class BonusChatAgent:
+class BonusChatClient:
 
     def __init__(self):
         self.token = None
@@ -57,7 +59,7 @@ class BonusChatAgent:
             await _get_access_token()
 
     @print_execution_time
-    async def business_deal(self, msg_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def submit_business_request(self, msg_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
         await self.get_access_token()
         result = {}
         try:
@@ -77,3 +79,10 @@ class BonusChatAgent:
             raise Exception(f"寿险中控访问失败: {result.get('msg', '未知错误')}")
         except Exception as e:
             raise Exception(f"寿险中控访问失败: {e}")
+
+    # DEPRECATED: 用 submit_business_request 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+    business_deal = submit_business_request
+
+
+# DEPRECATED: 用 BonusChatClient 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+BonusChatAgent = BonusChatClient

@@ -7,8 +7,8 @@ from ark_nav.core.utils.nav_logger import get_logger
 from ark_nav.core.utils.httpx_deployment_decorator import with_http_client
 
 from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, AgentPfmKbRequest, SearchIntentRequest
-from ark_nav.domains.shouxian.services.shouxian_nav_service import ShouXianNavService
-from ark_nav.core.services.agent_pfm_kb_service import AgentPfmKbService
+from ark_nav.domains.shouxian.services.shouxian_nav_service import ShouxianNavOrchestrator
+from ark_nav.core.services.agent_pfm_kb_service import KnowledgeBaseService
 
 logger = get_logger(__name__)
 
@@ -34,8 +34,8 @@ class NavAgentDeployment:
     """单级Agent：直接调用BB模型"""
 
     def __init__(self, rag_models_handle, shouxian_intent_agent):
-        self.agent_pfm_kb_svc = AgentPfmKbService(rag_models_handle, domain="shouxian", kg_id=os.getenv("SHOUXIAN_AGENT_PLATFORM_KG_ID"))
-        self.svc = ShouXianNavService(shouxian_intent_agent, self.agent_pfm_kb_svc)
+        self.agent_pfm_kb_svc = KnowledgeBaseService(rag_models_handle, domain="shouxian", kg_id=os.getenv("SHOUXIAN_AGENT_PLATFORM_KG_ID"))
+        self.svc = ShouxianNavOrchestrator(shouxian_intent_agent, self.agent_pfm_kb_svc)
 
     async def process(self, request: ChatCompletionRequest):
         logger.info(f"msg_id = {request.msg_id}, Request Payload = {request}")

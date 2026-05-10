@@ -1,9 +1,11 @@
 """平安大模型 API 调用客户端。
 
 从 xiezhi_http.py 拆分而来（2026-05），保持原函数签名与逻辑一字不改。
+2026-05 命名规范整改：原函数名 call_bigmodel_api（中式英文）→ call_llm（业界通用），
+旧名作为 alias 保留至下次 release。
 
 包含：
-- call_bigmodel_api：唯一公开入口，支持指数退避重试与双签名认证
+- call_llm：唯一公开入口，支持指数退避重试与双签名认证
 """
 import time
 import uuid
@@ -14,14 +16,14 @@ import httpx
 from ark_nav.core.services.gpt_signature import generate_app_sign
 from ark_nav.core.services.open_ai_signature import get_sign
 from ark_nav.core.utils.http_client_manager import get_client
-from ark_nav.core.utils.llm_platform_config import LLMPlfConfig
+from ark_nav.core.utils.llm_platform_config import LLMPlatformConfig
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 
 logger = get_logger(__name__)
 
 
 @print_execution_time
-async def call_bigmodel_api(
+async def call_llm(
         query: str | list,
         scene_id: str,
         app_key: str,
@@ -44,14 +46,14 @@ async def call_bigmodel_api(
     """
 
     request_timestamp = str(int(time.time() * 1000))
-    open_ai_signature = get_sign(LLMPlfConfig.RSA_PK, request_timestamp)
+    open_ai_signature = get_sign(LLMPlatformConfig.RSA_PK, request_timestamp)
     gpt_signature = generate_app_sign(app_key, app_secret, request_timestamp)
 
     headers = {
         "Content-Type": "application/json; charset=utf-8",
         "Accept": "application/json",
-        "openApiCode": LLMPlfConfig.OPEN_API_CODE,
-        "openApiCredential": LLMPlfConfig.CRE_ID,
+        "openApiCode": LLMPlatformConfig.OPEN_API_CODE,
+        "openApiCredential": LLMPlatformConfig.CRE_ID,
         "openApiRequestTime": request_timestamp,
         "openApiSignature": open_ai_signature,
         "gpt_app_key": app_key,
@@ -81,7 +83,7 @@ async def call_bigmodel_api(
     for attempt in range(max_retries):
         try:
             try:
-                response = await get_client().post(url=LLMPlfConfig.OPEN_AI_URL, headers=headers, json=payload,
+                response = await get_client().post(url=LLMPlatformConfig.OPEN_AI_URL, headers=headers, json=payload,
                                                    timeout=timeout)
                 logger.info(f"{request_id} 返回的response:{response.json()}")
                 response.raise_for_status()
@@ -101,3 +103,7 @@ async def call_bigmodel_api(
                 return None
 
     return None
+
+
+# DEPRECATED: 用 call_llm 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+call_bigmodel_api = call_llm

@@ -6,7 +6,7 @@ from typing import Dict, Any
 from dotenv import load_dotenv
 load_dotenv()
 from ark_nav.domains.yanglaoxian.router_schemas import OneKeyResult, XiaoAnRobotRequests, OneKeyLLMResult, KnowledgeInfo
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api, fetch_rag
+from ark_nav.core.services.xiezhi_http import call_llm, fetch_rag
 from ark_nav.core.utils.http_client_manager import get_client
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 from ark_nav.domains.yanglaoxian.prompts import ONEKEY_INTENT_CLASSIFIER
@@ -57,7 +57,7 @@ async def classify_user_intent(
     ]
     logger.info(f"{msg_id}, 意图识别Query: {messages}")
     try:
-        response = await call_bigmodel_api(
+        response = await call_llm(
             query=messages,
             scene_id=scene_id,
             app_key=app_key,
@@ -74,9 +74,13 @@ async def classify_user_intent(
         return OneKeyLLMResult()
 
 
-class XiaoAnRobot:
+class XiaoAnRobotClient:
     """
-    小安机器人
+    小安机器人 HTTP 客户端。
+
+    2026-05 命名规范整改：原类名 XiaoAnRobot，但实际是普通 HTTP 客户端
+    （不是 LLM agent，是调用 ESG 接口的封装），重命名为 XiaoAnRobotClient，
+    旧名作为 alias 保留至下次 release。
     """
     MENU_ITEMS = "7"  # 动态菜单
 
@@ -142,7 +146,7 @@ class OneKeyService:
 
     def __init__(self, agent_pfm_kb_svc, t: float=0.85):
         self.t = t
-        self.robot = XiaoAnRobot()
+        self.robot = XiaoAnRobotClient()
         self.scene_id = os.getenv("INTENT_REWRITE_SCENE_ID")
         self.app_key = os.getenv("INTENT_REWRITE_APP_KEY")
         self.app_secret = os.getenv("INTENT_REWRITE_APP_SECRET")
@@ -163,7 +167,7 @@ class OneKeyService:
         if knowledge is None:
             logger.info(f"{msg_id}, 【非一键场景 - 无知识库配置】")
             return OneKeyResult(card_content=card_content)
-        elif llm_result.task_type == OneKeyLLMResult.TASK_TYPE_INFO and card_content.get("answerType", "") == XiaoAnRobot.MENU_ITEMS:
+        elif llm_result.task_type == OneKeyLLMResult.TASK_TYPE_INFO and card_content.get("answerType", "") == XiaoAnRobotClient.MENU_ITEMS:
             logger.info(f"{msg_id}, 【非一键场景 - 小安特殊answerType】")
             return OneKeyResult(card_content=card_content)
         else:
@@ -213,3 +217,7 @@ class OneKeyService:
                 return result
         else:
             return OneKeyResult(card_content=data)
+
+
+# DEPRECATED: 用 XiaoAnRobotClient 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+XiaoAnRobot = XiaoAnRobotClient

@@ -1,22 +1,25 @@
 """智能体平台 Prompt 拉取与缓存。
 
 从 xiezhi_http.py 拆分而来（2026-05），保持原函数签名与逻辑一字不改。
+2026-05 命名规范整改：原函数名 init_prompt_from_agent_rag → bootstrap_prompts_from_kb
+（更准确反映"启动期从 KB 拉取 prompts 注入环境变量"的含义），
+旧名作为 alias 保留至下次 release。
 
-注意：init_prompt_from_agent_rag 通过写入 os.environ 的方式
+注意：bootstrap_prompts_from_kb 通过写入 os.environ 的方式
 "动态注入" XIEZHI_PROMPT / BAIZE_PROMPT / YLX_PROMPT 三个环境变量，
 下游业务代码通过 os.getenv 读取（详见 docs/ENV_INVENTORY.md C 类隐藏配置）。
 """
 import os
 
 from ark_nav.core.services.xiezhi.kb_client import search_kb
-from ark_nav.core.utils.agent_platform_config import AgentPfmConfig
+from ark_nav.core.utils.agent_platform_config import AgentPlatformConfig
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 
 logger = get_logger(__name__)
 
 
 @print_execution_time
-async def init_prompt_from_agent_rag():
+async def bootstrap_prompts_from_kb():
     """
     调用智能体画布平台，查询提示词。
     """
@@ -38,7 +41,7 @@ async def init_prompt_from_agent_rag():
 async def _get_prompt_by_name(prompt_name: str) -> str | None:
     logger.info(f"Calling agent model to get prompt templete")
     try:
-        agent_platform_kg_id = AgentPfmConfig.KG_ID
+        agent_platform_kg_id = AgentPlatformConfig.KG_ID
         answers = await search_kb(
             query=prompt_name,
             kb_type=["faq"],
@@ -51,3 +54,7 @@ async def _get_prompt_by_name(prompt_name: str) -> str | None:
     except Exception as e:
         logger.error(f"调用 prompt 服务失败: {e}", exc_info=True)
         return None
+
+
+# DEPRECATED: 用 bootstrap_prompts_from_kb 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+init_prompt_from_agent_rag = bootstrap_prompts_from_kb

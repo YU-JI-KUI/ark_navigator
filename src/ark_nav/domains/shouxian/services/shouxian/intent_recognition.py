@@ -3,19 +3,19 @@
 从 shouxian_nav_service.py 拆分而来（2026-05），保持原 class 行为一字不改。
 
 负责：
-- 调用 BonusChatAgent.business_deal 走寿险中控
+- 调用 BonusChatClient.submit_business_request 走寿险中控
 - 后处理：cross-bu 检查 + to_agent 重置（生存金/理赔报案场景）
 """
 from typing import Any, Dict
 
-from ark_nav.domains.shouxian.services.shouxian.bonus_chat_agent import BonusChatAgent
+from ark_nav.domains.shouxian.services.shouxian.bonus_chat_client import BonusChatClient
 
 
 class IntentRecognitionService:
     rejection_card_type_list = []
 
     def __init__(self):
-        self.bonus_chat_agent = BonusChatAgent()
+        self.bonus_chat_client = BonusChatClient()
 
     def _postprocess(self, bonus_response: Dict[str, Any], to_agent: str, bu_channel: Dict[str, Any]) -> Dict[str, Any]:
         cross_bu_check = "life_insurance"
@@ -53,5 +53,5 @@ class IntentRecognitionService:
             "toAgent": to_agent,
             "chatAgentReq": chat_agent_req
         }
-        response = await self.bonus_chat_agent.business_deal(msg_id=req_id, params=request_body)
+        response = await self.bonus_chat_client.submit_business_request(msg_id=req_id, params=request_body)
         return self._postprocess(response, to_agent, bu_channel)

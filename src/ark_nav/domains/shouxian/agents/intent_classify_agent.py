@@ -3,7 +3,7 @@ import os
 from fastapi import HTTPException
 from ray import serve
 from ark_nav.core.utils.nav_logger import get_logger, setup_logging, print_execution_time
-from ark_nav.domains.shouxian.intent_classifier_advance import IntentClassifier
+from ark_nav.domains.shouxian.intent_classifier_advanced import IntentClassifier
 from ark_nav.domains.shouxian.intent_classifier_cot import IntentCOTClassifier
 from ark_nav.domains.shouxian.intent_classifier_simple import classify_user_intent
 from ark_nav.domains.shouxian.router_schemas import COTType, IntentRequest, IntentResult
@@ -14,6 +14,10 @@ INITIAL_REPLICAS = int(os.getenv("RAY_INITIAL_REPLICAS", 10))
 
 
 @serve.deployment(
+    # 显式锁定 deployment name 为旧类名，避免改 Python 类名时影响 Ray Dashboard
+    # 上的 actor 名 / Prometheus metrics label / 运维 grep 规则。
+    # 可在下次大版本同步部署侧后再移除（命名规范整改 2026-05）
+    name="IntentClassifyAgentDeployment",
     max_ongoing_requests=20,
     ray_actor_options={
         "num_cpus": 0.5,
@@ -29,8 +33,16 @@ INITIAL_REPLICAS = int(os.getenv("RAY_INITIAL_REPLICAS", 10))
     }
 )
 @with_http_client()
-class IntentClassifyAgentDeployment:
-    """ 多级Agent：知识库检索 + BERT判断 + BOB召回"""
+class IntentClassifierDeployment:
+    """寿险意图分类 Ray Serve Deployment（多级编排：RAG → BERT → LLM）。
+
+    2026-05 命名规范整改：原类名 IntentClassifyAgentDeployment 双后缀冗余
+    （Agent + Deployment），重命名为 IntentClassifierDeployment，
+    旧名作为 alias 保留至下次 release。
+
+    部署 name 仍是 "IntentClassifyAgentDeployment"（Ray Dashboard / metrics
+    标识符），与运维约定保持兼容。
+    """
 
     def __init__(self, rag_models_handle, bert_handle):
         setup_logging()
@@ -107,3 +119,7 @@ class IntentClassifyAgentDeployment:
                 result=result,
                 source="direct"
             )
+
+
+# DEPRECATED: 用 IntentClassifierDeployment 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+IntentClassifyAgentDeployment = IntentClassifierDeployment

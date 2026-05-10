@@ -13,10 +13,15 @@ from ark_nav.core.services.rag_service import HybridRetriever
 from ark_nav.core.services.xiezhi_http import _get_faq_page_data, _get_faq_table_data
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 
-logger = get_logger("ark_nav_AgentPfmKb_Service")
+logger = get_logger(__name__)
 
 
-class AgentPfmKbService:
+class KnowledgeBaseService:
+    """知识库服务（FAISS 本地索引 + 智能体平台远端 KB 双模式）。
+
+    2026-05 命名规范整改：原类名 AgentPfmKbService（Pfm 是 platform 的难懂缩写），
+    重命名为 KnowledgeBaseService，旧名作为 alias 保留至下次 release。
+    """
     def __init__(self, rag_models_handle, domain, kg_id):
         self.retriever = HybridRetriever(rag_models_handle)
         self.data_dir = f"{os.getenv('FAISS_INDEX_DIR')}/{domain}"
@@ -93,3 +98,7 @@ class AgentPfmKbService:
         with open(chains_path, "r", encoding='utf-8') as f:
             chains = json.load(f)
         self.retriever.load_index(index_path, chains)
+
+
+# DEPRECATED: 用 KnowledgeBaseService 代替，保留至下次 release 后删除（命名规范整改 2026-05）
+AgentPfmKbService = KnowledgeBaseService

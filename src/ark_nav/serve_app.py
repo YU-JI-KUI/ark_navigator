@@ -13,7 +13,7 @@ from ark_nav.core.models import (
 from ark_nav.ark_nav_api import APIDeployment
 from ark_nav.domains.shouxian import (
     NavAgentDeployment,
-    IntentClassifyAgentDeployment,
+    IntentClassifierDeployment,
     ShouxianBertDeployment
 )
 from ark_nav.domains.yanglaoxian import (
@@ -51,7 +51,7 @@ def build_app(args=None):
     shouxian_bert = ShouxianBertDeployment.bind()
 
     # 2. Agent层（CPU多副本自动扩展）
-    shouxian_intent_agent = IntentClassifyAgentDeployment.bind(rag_models, shouxian_bert)
+    shouxian_intent_agent = IntentClassifierDeployment.bind(rag_models, shouxian_bert)
     shouxian_nav_agent = NavAgentDeployment.bind(rag_models, shouxian_intent_agent)
     ylx_intent_agent = NavYLXAgentDeployment.bind(rag_models)
 

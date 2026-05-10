@@ -10,20 +10,14 @@ import asyncio
 import json
 import os
 from typing import List, Optional
-from enum import Enum
+from ark_nav.domains.shouxian.intents import IntentType  # noqa: F401  保留 re-export 以兼容旧 import 路径
 
 from ark_nav.domains.shouxian.intent_classifier_simple import classify_user_intent
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api
+from ark_nav.core.services.xiezhi_http import call_llm
 from ark_nav.core.utils.nav_logger import get_logger
 from ark_nav.domains.shouxian.router_schemas import IntentResult, Message
 
 logger = get_logger("ark_nav")
-
-
-class IntentType(Enum):
-    """意图类型枚举"""
-    LIFE_INSURANCE = "寿险意图"  # 寿险相关意图
-    REJECTED = "拒识"  # 无法识别的意图
 
 
 class IntentClassifier:
@@ -251,7 +245,7 @@ Output:
             full_query = prompt.format(history=history, query=query)
             logger.info(f"用户输入-{query},历史-{history}")
 
-            response = await call_bigmodel_api(
+            response = await call_llm(
                 query=full_query,
                 scene_id=scene_id,
                 app_key=intent_rewrite_app_key,
