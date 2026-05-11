@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from ray import serve
 
 from ark_nav.core.services.xiezhi_http import call_llm, fetch_rag
-from ark_nav.core.utils.nav_logger import get_logger, setup_logging
+from ark_nav.core.utils.nav_logger import get_logger, setup_logging, with_log_context
 from ark_nav.domains.shouxian.router_schemas import IntentResult
 from ark_nav.core.utils.llm_platform_config import LLMPlatformConfig
 from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest, YLXResponse, XiaoAnRobotRequests, AgentPfmKbRequest
@@ -58,6 +58,7 @@ class NavYLXAgentDeployment:
         self.onekey_svc = OneKeyService(self.agent_pfm_kb_svc)
         # self.agent_pfm_kb_svc.load_index()
 
+    @with_log_context()
     async def process(self, query: str, msg_id: str = None) -> IntentResult:
         try:
             start_time = time.time()
@@ -114,6 +115,7 @@ class NavYLXAgentDeployment:
             )
             return default_resp
 
+    @with_log_context()
     async def run(self, request: YLXRequest) -> YLXResponse:
         try:
             logger.info(f"{request.msg_id}, User request: {request}")

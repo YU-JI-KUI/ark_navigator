@@ -1,10 +1,26 @@
 # 日志规范
 
 > 本文档由 Kris 在接手项目时整理（2026-05），用于阶段 4"日志规范统一"整改的执行依据。
+> 2026-05 增补：日志格式化（msg_id 自动注入）+ 敏感信息脱敏整改。
 >
 > 整改原则：**只改"打印方式"，不改"日志内容"**。
 > - ✅ 改：`print()` → `logger.xxx`、`traceback.print_exc()` → `exc_info=True`、`logging.getLogger()` → `get_logger()`
 > - ❌ 不改：日志消息文本、日志级别、不删任何日志（即使看起来无用）
+
+## 速查：本项目日志能力清单（2026-05 整改后）
+
+每条日志输出会自动包含：
+
+| 字段 | 来源 | 何时注入 |
+|---|---|---|
+| `trace_id` | 请求 `X-Request-ID` header 或自动 UUID | 中间件层 `set_trace_id()` |
+| `msg_id` | 业务请求体 `request.msg_id` 字段 | `@with_log_context` 装饰器自动提取 |
+| `timestamp` | structlog 内置 | `TimeStamper` processor |
+| 自动脱敏 | 5 类正则 + 敏感字段名 [REDACTED] | `_mask_sensitive_processor` |
+
+**业务代码不需要做任何事**就能享受以上能力。但要注意：
+- 跨 Ray Deployment 边界时，**必须在入口方法加 `@with_log_context()` 装饰器**（已加在所有 Deployment 主入口）
+- 临时关闭脱敏：`LOG_MASK_ENABLED=0`（仅紧急回滚时用）
 
 ---
 
@@ -196,3 +212,121 @@ logger.info(f"Calling large model with {request_id}")    # 英文
 原代码里几处 `logging.getLogger(__name__)` 拿的是标准 logger，输出到 root logger。现在改 `get_logger(__name__)` 用 structlog。
 - 内容上等价，但**结构化输出格式**会从纯文本变成 structlog 渲染（开发环境带颜色、生产环境带 JSON）。
 - 这取决于 `setup_logging(log_format=...)` 的设置 —— 与之前 `setup_logging` 的行为一致，无变化。
+
+---
+
+## 六、日志格式化与脱敏（2026-05 整改）
+
+### 6.1 msg_id 自动注入机制
+
+#### 6.1.1 ContextVar + structlog processor
+
+机制与已有的 `trace_id` 完全同构（[`nav_logger.py`](../core/utils/nav_logger.py)）：
+
+```
+_msg_id_var: ContextVar  ←  set_msg_id(msg_id)
+                              ↑
+                              ├─ TraceIDMiddleware（HTTP header X-Msg-Id）
+                              └─ @with_log_context（pydantic 参数 .msg_id）
+                          ↓
+            _add_msg_id_processor（structlog）
+                          ↓
+        每条日志自动注入 msg_id 字段
+```
+
+#### 6.1.2 跨 Ray Deployment 边界
+
+⚠️ **关键**：ContextVar 在同一进程的 asyncio 任务/await 边界自动传播，但 Ray Serve 每个 deployment 部署在独立 actor 进程，`.remote()` 调用相当于跨进程 RPC。
+
+**解决方案**：在每个 Deployment 的入口方法加 `@with_log_context()` 装饰器，自动从第一个参数（pydantic 请求对象）提取 `msg_id` / `trace_id`。
+
+当前已装饰的入口（2026-05 整改时加）：
+- `NavAgentDeployment.process` / `.search`
+- `NavYLXAgentDeployment.run` / `.process`
+
+新增 Deployment 入口方法时必须加此装饰器（否则下游日志会断链）。
+
+#### 6.1.3 业务代码无需修改
+
+旧代码 `logger.info(f"msg_id = {x}, ...")` 一字不动。日志输出会同时有：
+- f-string 拼进 message 文本（业务原写法保留）
+- 结构化字段 `msg_id=xxx`（新机制自动注入）
+
+**双份冗余**是有意为之 —— 老 grep 规则和新 JSON 解析都能工作。
+
+### 6.2 敏感信息自动脱敏
+
+#### 6.2.1 5 类正则规则（[`masking_rules.py`](../core/utils/masking_rules.py)）
+
+| 类型 | 示例输入 | 输出 |
+|---|---|---|
+| 中国身份证（18 位） | `110101199001011234` | `110101********1234` |
+| 中国手机号（11 位） | `13800138000` | `138****8000` |
+| 邮箱 | `kris@example.com` | `k***@example.com` |
+| 银行卡（16-19 位） | `6225881234567890` | `6225 **** **** 7890` |
+| 地址（省/市/区） | `北京市海淀区中关村大街` | `北京市海淀区****` |
+
+#### 6.2.2 敏感字段名 [REDACTED]
+
+结构化字段（kwarg）中以下 key 会被整体替换为 `[REDACTED]`：
+
+`password / passwd / secret / app_secret / token / access_token / refresh_token / api_key / authorization / rsa_pk / gpt_signature / open_ai_signature / client_secret / app_sec`
+
+匹配大小写不敏感。
+
+#### 6.2.3 灰度回滚
+
+环境变量 `LOG_MASK_ENABLED=0` 关闭脱敏（仅在确认正则误伤需要紧急回滚时用）。
+
+#### 6.2.4 性能影响
+
+同步正则在 structlog processor 链里就地执行，单条日志增加 ~5 次 `re.sub` 调用，开销微秒级。预编译的 pattern 模块加载时一次性 compile（[`masking_rules.py`](../core/utils/masking_rules.py)），无运行时开销。
+
+### 6.3 输出示例（改造前 vs 改造后）
+
+#### 业务代码（保持不动）：
+```python
+logger.info(f"msg_id = {request.msg_id}, query = {request.user_message}")
+# 假设 request.msg_id = "abc-123"，user_message = "我手机 13800138000"
+```
+
+#### 改造前（仅 trace_id）：
+```
+2026-05-11T10:30:00 [info     ] msg_id = abc-123, query = 我手机 13800138000   trace_id=uuid-xxx
+```
+
+#### 改造后（msg_id 字段 + 自动脱敏）：
+```
+2026-05-11T10:30:00 [info     ] msg_id = abc-123, query = 我手机 138****8000   trace_id=uuid-xxx msg_id=abc-123
+```
+
+JSON 模式：
+```json
+{
+  "event": "msg_id = abc-123, query = 我手机 138****8000",
+  "trace_id": "uuid-xxx",
+  "msg_id": "abc-123",
+  "timestamp": "2026-05-11T10:30:00"
+}
+```
+
+#### 敏感字段示例：
+```python
+logger.info("auth_request", app_secret="real_value_xxx", user_id=123)
+```
+
+输出（JSON）：
+```json
+{
+  "event": "auth_request",
+  "app_secret": "[REDACTED]",
+  "user_id": 123,
+  "trace_id": "uuid-xxx",
+  "msg_id": "abc-123",
+  "timestamp": "..."
+}
+```
+
+### 6.4 测试
+
+[`tests/test_masking_rules.py`](../../../tests/test_masking_rules.py) 覆盖 5 类正则的正/反例 + 边界情况（25+ assertions）。本地无 pytest 时也可用纯 Python 跑核心 case 验证。

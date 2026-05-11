@@ -3,7 +3,7 @@ import os
 from typing import Dict, Any
 from ray import serve
 
-from ark_nav.core.utils.nav_logger import get_logger
+from ark_nav.core.utils.nav_logger import get_logger, with_log_context
 from ark_nav.core.utils.httpx_deployment_decorator import with_http_client
 
 from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, AgentPfmKbRequest, SearchIntentRequest
@@ -37,6 +37,7 @@ class NavAgentDeployment:
         self.agent_pfm_kb_svc = KnowledgeBaseService(rag_models_handle, domain="shouxian", kg_id=os.getenv("SHOUXIAN_AGENT_PLATFORM_KG_ID"))
         self.svc = ShouxianNavOrchestrator(shouxian_intent_agent, self.agent_pfm_kb_svc)
 
+    @with_log_context()
     async def process(self, request: ChatCompletionRequest):
         logger.info(f"msg_id = {request.msg_id}, Request Payload = {request}")
         response = await self.svc.run(msg_id=request.msg_id, request=request)
@@ -50,6 +51,7 @@ class NavAgentDeployment:
             logger.error(f"重置寿险 FAISS 索引异常:{str(e)}", exc_info=True)
             return {"status": f"failed -> {str(e)}"}
 
+    @with_log_context()
     async def search(self, request: SearchIntentRequest):
         logger.info(f"Search API: {request.msg_id}, User request: {request}")
         response = await self.svc.search(request=request)

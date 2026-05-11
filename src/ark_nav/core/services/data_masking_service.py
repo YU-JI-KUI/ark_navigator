@@ -21,41 +21,21 @@ class DataMaskingService:
         self.executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
     def _get_default_patterns(self):
-        """获取默认正则模式"""
+        """获取默认正则模式。
+
+        2026-05 整改：原 email/bank_card/address 正则字符类未闭合，运行时会抛
+        re.error 被 try/except 吞掉静默失效，本次一并修复。
+
+        规则与 ark_nav.core.utils.masking_rules 中的同步版本保持一致，
+        共用同一份正则文本，避免双份维护。
+        """
+        # 从 masking_rules 模块复用规则定义（避免双份维护）
+        from ark_nav.core.utils.masking_rules import DEFAULT_PATTERN_DEFS
+
         return [
-            # (pattern_name, pattern, replacement_function)
-
-            # 身份证号
-            ("chinese_id_card",
-             r'(?:^|(?<=[^\d]))[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?=\d|$)',
-             lambda m: m.group()[:6] + '********' + m.group()[-4:], None),
-
-            # 手机号
-            ("phone_number",
-             r'(?:^|(?<=[^\d]))1[3-9]\d{9}(?=\D|$)',
-             lambda m: m.group()[:3] + '****' + m.group()[-4:],
-             None),
-
-            # # 中文姓名
-            # ("chinese_name",
-            #  r'(?<![\\u4e00-\\u9fa5])([\\u4e00-\\u9fa5]{2,4})(?=[。！？\s]|$)',
-            #  lambda m: m.group(1)[0] + '*' * (len(m.group(1)) - 1)),
-
-            # 邮箱
-            ("email",
-             r'(?:^|(?<=[^\w@|[一-龥]))[A-Za-z0-9._%+-]{2,}@([A-Za-z0-9.-]+\.[A-Za-z]{2,})(?=[^\w@|$)',
-             lambda m: f"{m.group(1)[0]}***@{m.group(2)}", None),
-
-            # 银行卡号
-            ("bank_card",
-             r'(?:^|(?<=[^\d]))(\d{4})(\d{4})(\d{4})(\d{4})(\d{0,3})(?=\D|$) ',
-             lambda m: f"{m.group(1)} **** **** {m.group(4)}",
-             None),
-
-            # 地址（示例）
-            ("address",
-             r'(北京市|上海市|天津市|重庆市|[一-龥]{2,10}省)?([一-龥]{2,10}(?:市|自治区|州|地区|盟))([一-龥]',
-             lambda m: (m.group(1) or '') + m.group(2) + (m.group(3) or '') + '****', None),
+            # 转换格式: (name, pattern, repl_func, context_words)
+            (name, pattern, repl_func, None)
+            for name, pattern, repl_func in DEFAULT_PATTERN_DEFS
         ]
 
     def _has_context(self, match, context_words: List[str], window_size: int = 15) -> bool:
