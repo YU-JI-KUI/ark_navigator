@@ -1,6 +1,3 @@
-import json
-import re
-from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
 import faiss
@@ -12,10 +9,10 @@ logger = get_logger(__name__)
 
 
 class HybridRetriever:
-    """混合召回（Dense + BM25）"""
+    """混合召回检索器：Dense（FAISS 向量）+ Sparse（BM25 关键词）"""
 
-    def __init__(self, rag_models_handle):
-        self.rag_models_handle = rag_models_handle
+    def __init__(self, embedding_model_handle):
+        self.embedding_model_handle = embedding_model_handle
         self.dense_index: Optional[faiss.Index] = None
         self.sparse_index: Optional[BM25Okapi] = None
         self.chains: List[Dict[str, Any]] = []
@@ -27,7 +24,7 @@ class HybridRetriever:
 
         logger.info("构建Dense索引...")
         embeddings = await remote_with_trace(
-            self.rag_models_handle.batch_encode,
+            self.embedding_model_handle.batch_encode,
             texts,
             batch_size=32,
             show_progress_bar=True,
@@ -40,13 +37,7 @@ class HybridRetriever:
         tokenized_corpus = [self._extract_keywords(text) for text in texts]
         self.sparse_index = BM25Okapi(tokenized_corpus)
 
-        logger.info("索引构建完成: %d条", len(chains))
-
-    def load_index(self, index_path, chains):
-        logger.info("加载Dense索引...")
-        self.chains = chains
-        self.dense_index = faiss.read_index(str(index_path))
-        logger.info("Dense索引加载完毕...")
+        logger.info(f"索引构建完成: {len(chains)}条")
 
     def _extract_keywords(self, text: str) -> List[str]:
         """TF-IDF关键词提取"""
@@ -67,7 +58,7 @@ class HybridRetriever:
         if not self.chains:
             return []
 
-        query_emb = await self.rag_models_handle.encode.remote(query)
+        query_emb = await self.embedding_model_handle.encode.remote(query)
         k = min(recall_k, len(self.chains))
         sims, idxs = self.dense_index.search(query_emb, k)
 
@@ -92,43 +83,3 @@ class HybridRetriever:
 
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
-
-
-class SimpleRuleEngine:
-    """规则引擎"""
-
-    def __init__(self, rules_path: Optional[str] = None):
-        if rules_path and Path(rules_path).exists():
-            with open(rules_path, "r", encoding="utf-8") as f:
-                rules = json.load(f)
-        else:
-            rules = self._default_rules()
-
-        self.life_keywords = rules.get("life_keywords", [])
-        self.exclude_keywords = rules.get("exclude_keywords", [])
-        self.life_patterns = [re.compile(kw) for kw in self.life_keywords]
-        self.exclude_patterns = [re.compile(kw) for kw in self.exclude_keywords]
-
-    def _default_rules(self):
-        return {
-            "life_keywords": [
-                "寿险", "人寿", "终身寿险", "定期寿险",
-                "身故保险金", "受益人", "保单贷款", "现金价值",
-                "生存金", "分红", "万能险",
-            ],
-            "exclude_keywords": [
-                "车险", "汽车保险", "交强险", "车损", "三者险",
-                "财产险", "家财险", "盗抢险",
-            ],
-        }
-
-    def predict(self, text: str) -> Optional[str]:
-        """规则预判"""
-        text = text.lower()
-        for pattern in self.exclude_patterns:
-            if pattern.search(text):
-                return "非寿险"
-        for pattern in self.life_patterns:
-            if pattern.search(text):
-                return "寿险"
-        return None

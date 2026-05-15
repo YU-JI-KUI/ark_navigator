@@ -11,6 +11,7 @@ MIN_REPLICAS = int(os.getenv("RAY_MIN_REPLICAS", 2))
 
 
 @serve.deployment(
+    # 部署名保留 "rag-models" 以避免影响生产 Ray 集群中的部署标识与历史指标
     name="rag-models",
     ray_actor_options={
         "num_gpus": 0.5 if settings.use_gpu else 0,
@@ -22,8 +23,8 @@ MIN_REPLICAS = int(os.getenv("RAY_MIN_REPLICAS", 2))
         "target_num_ongoing_requests_per_replica": 50,
     },
 )
-class RAGModelDeployment:
-    """Embedding 模型"""
+class EmbeddingModelDeployment:
+    """Embedding 模型 Ray Serve 部署"""
 
     def __init__(self):
         from sentence_transformers import SentenceTransformer
@@ -32,7 +33,7 @@ class RAGModelDeployment:
         setup_logging()
         logger = logging.getLogger(__name__)
         self.device = "cuda" if torch.cuda.is_available() and settings.use_gpu else "cpu"
-        logger.info("[Embedding] 加载模型到 %s", self.device)
+        logger.info(f"[Embedding] 加载模型到 {self.device}")
         self.embedding_model = SentenceTransformer(
             settings.embedding_model,
             device=self.device,

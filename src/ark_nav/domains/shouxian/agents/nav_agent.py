@@ -1,6 +1,5 @@
 """寿险小导航智能体 - 合并意图识别与导航功能"""
 import os
-from typing import Dict, Any
 
 from fastapi import HTTPException
 from ray import serve
@@ -15,13 +14,13 @@ from ark_nav.core.utils.httpx_deployment_decorator import with_http_client
 
 from ark_nav.domains.shouxian.router_schemas import (
     ChatCompletionRequest,
-    AgentPfmKbRequest,
     SearchIntentRequest,
     IntentRequest,
     IntentResult,
 )
 from ark_nav.domains.shouxian.services.shouxian_nav_service import ShouXianNavService
-from ark_nav.core.services.agent_pfm_kb_service import AgentPfmKbService
+from ark_nav.core.services.knowledge_base import build_knowledge_base, bootstrap_knowledge_base
+from ark_nav.core.services.knowledge_base_scheduler import KnowledgeBaseSyncScheduler
 from ark_nav.domains.shouxian.intent_classifier_advance import IntentClassifier
 from ark_nav.domains.shouxian.intent_classifier_simple import classify_user_intent
 
@@ -51,32 +50,29 @@ INITIAL_REPLICAS = int(os.getenv("RAY_INITIAL_REPLICAS", 10))
 class NavAgentDeployment:
     """寿险导航 Agent：包含意图识别 + 主对话编排"""
 
-    def __init__(self, rag_models_handle):
+    def __init__(self, embedding_model_handle):
         setup_logging()
-        self.agent_pfm_kb_svc = AgentPfmKbService(
-            rag_models_handle, domain="shouxian", kg_id=os.getenv("SHOUXIAN_AGENT_PLATFORM_KG_ID")
+        self.knowledge_base = build_knowledge_base(
+            embedding_model_handle=embedding_model_handle,
+            domain="shouxian",
+            kg_id=os.getenv("SHOUXIAN_AGENT_PLATFORM_KG_ID"),
         )
+        # 同步阻塞等索引就绪：LOCAL 拉远程建索引，REMOTE 立即返回
+        bootstrap_knowledge_base(self.knowledge_base)
         # 把自身作为 intent agent 注入，让 ClassifyService 进程内直接调用
-        self.svc = ShouXianNavService(self, self.agent_pfm_kb_svc)
+        self.svc = ShouXianNavService(self, self.knowledge_base)
+        self._sync_scheduler = KnowledgeBaseSyncScheduler(self.knowledge_base)
+        self._sync_scheduler.start()
 
     @propagate_trace
     async def process(self, request: ChatCompletionRequest):
-        logger.info("nav_agent.process msg_id=%s", request.msg_id)
+        logger.info(f"nav_agent.process msg_id={request.msg_id}")
         response = await self.svc.run(msg_id=request.msg_id, request=request)
         return response
 
     @propagate_trace
-    async def reset_faiss_index(self, request: AgentPfmKbRequest) -> Dict[str, Any]:
-        try:
-            await self.agent_pfm_kb_svc.load_data(request.kg_id, request.is_reload)
-            return {"status": "success"}
-        except Exception:
-            logger.exception("重置寿险 FAISS 索引异常")
-            return {"status": "failed"}
-
-    @propagate_trace
     async def search(self, request: SearchIntentRequest):
-        logger.info("nav_agent.search msg_id=%s", request.msg_id)
+        logger.info(f"nav_agent.search msg_id={request.msg_id}")
         response = await self.svc.search(request=request)
         return response
 

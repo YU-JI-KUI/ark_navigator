@@ -193,11 +193,11 @@ def print_execution_time(func: Callable) -> Callable:
         try:
             result = func(*args, **kwargs)
             cost_ms = (time.perf_counter() - start) * 1000
-            logger.info("func=%s cost_ms=%.2f", func.__name__, cost_ms)
+            logger.info(f"func={func.__name__} cost_ms={cost_ms:.2f}")
             return result
         except Exception:
             cost_ms = (time.perf_counter() - start) * 1000
-            logger.exception("func=%s cost_ms=%.2f raised", func.__name__, cost_ms)
+            logger.exception(f"func={func.__name__} cost_ms={cost_ms:.2f} raised")
             raise
 
     @wraps(func)
@@ -206,11 +206,11 @@ def print_execution_time(func: Callable) -> Callable:
         try:
             result = await func(*args, **kwargs)
             cost_ms = (time.perf_counter() - start) * 1000
-            logger.info("func=%s cost_ms=%.2f", func.__name__, cost_ms)
+            logger.info(f"func={func.__name__} cost_ms={cost_ms:.2f}")
             return result
         except Exception:
             cost_ms = (time.perf_counter() - start) * 1000
-            logger.exception("func=%s cost_ms=%.2f raised", func.__name__, cost_ms)
+            logger.exception(f"func={func.__name__} cost_ms={cost_ms:.2f} raised")
             raise
 
     return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
@@ -267,10 +267,9 @@ def remote_with_trace(handle_method, *args, **kwargs):
 def log_http_request(logger: logging.Logger, request, raw_request) -> None:
     """旧接口；新代码请用 TraceIDMiddleware 自动记录请求"""
     logger.info(
-        "legacy_http_request path=%s app_key=%s user_message=%s",
-        getattr(raw_request.url, "path", "-"),
-        getattr(request, "app_key", "-"),
-        getattr(request, "user_message", "-"),
+        f"legacy_http_request path={getattr(raw_request.url, 'path', '-')} "
+        f"app_key={getattr(request, 'app_key', '-')} "
+        f"user_message={getattr(request, 'user_message', '-')}"
     )
 
 
@@ -301,7 +300,7 @@ def push_to_argilla(push_func: Callable[[dict], Any]):
                 }
                 await push_func(log_entry)
             except Exception:
-                logging.getLogger(__name__).exception("push_to_argilla failed func=%s", func.__name__)
+                logging.getLogger(__name__).exception(f"push_to_argilla failed func={func.__name__}")
             return response
 
         return wrapper

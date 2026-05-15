@@ -101,9 +101,3 @@ class YLXResponse:
             "service_type": self.service_type,
             "extrainfo": self.extrainfo
         }
-
-
-@dataclass
-class AgentPfmKbRequest:
-    kg_id: str
-    is_reload: bool = False

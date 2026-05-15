@@ -61,10 +61,8 @@ class TraceIDMiddleware(BaseHTTPMiddleware):
 
         start = time.perf_counter()
         logger.info(
-            "request_in method=%s path=%s payload=%s",
-            request.method,
-            request.url.path,
-            _format_body(body_bytes),
+            f"request_in method={request.method} path={request.url.path} "
+            f"payload={_format_body(body_bytes)}"
         )
 
         status_code = 500
@@ -89,10 +87,7 @@ class TraceIDMiddleware(BaseHTTPMiddleware):
         finally:
             cost_ms = (time.perf_counter() - start) * 1000
             logger.info(
-                "request_out method=%s path=%s status=%s cost_ms=%.2f response=%s",
-                request.method,
-                request.url.path,
-                status_code,
-                cost_ms,
-                _format_body(response_body),
+                f"request_out method={request.method} path={request.url.path} "
+                f"status={status_code} cost_ms={cost_ms:.2f} "
+                f"response={_format_body(response_body)}"
             )

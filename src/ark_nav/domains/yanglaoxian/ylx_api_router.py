@@ -2,16 +2,15 @@ from fastapi import APIRouter, Request
 from ark_nav.core.services.data_pusher_service import DataPusherService
 import os
 import json
-from typing import Dict, Any, AsyncIterator
+from typing import AsyncIterator
 from fastapi.responses import StreamingResponse
 from ark_agentic.core.stream import AgentStreamEvent, StreamEventBus
 from ark_agentic.core.stream.output_formatter import create_formatter
 import asyncio
-from ark_nav.core.utils.broadcast_utils import broadcast
 from ark_nav.core.utils.nav_logger import get_logger, push_to_argilla, remote_with_trace
 from ark_nav.core.services.xiezhi_http import init_prompt_from_agent_rag
 from ark_nav.domains.shouxian.router_schemas import IntentRequest, IntentResult
-from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest, AgentPfmKbRequest
+from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest
 
 PUSHER = DataPusherService(url=os.getenv("DATAPULSE_URL"), channel="ylXian")
 
@@ -61,7 +60,7 @@ def create_router(agent_handler):
                     bus.on_thinking_delta(delta="正在调用寿险红利接口....")
                     output = await remote_with_trace(agent_handler.run, request)
                     bus.emit_completed(message=json.dumps(output.to_dict()))
-                    logger.info("ylx agent stream done msg_id=%s", request.msg_id)
+                    logger.info(f"ylx agent stream done msg_id={request.msg_id}")
                 finally:
                     done_event.set()
 
@@ -85,20 +84,7 @@ def create_router(agent_handler):
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         else:
             response = await remote_with_trace(agent_handler.run, request)
-            logger.info("ylx agent done msg_id=%s", request.msg_id)
+            logger.info(f"ylx agent done msg_id={request.msg_id}")
             return response
-
-    @router.post("/reset_faiss_index")
-    async def reset_faiss_index(request: AgentPfmKbRequest) -> Dict[str, Any]:
-        """重置FAISS INDEX接口。"""
-        logger.info("reset YLX faiss index")
-        broadcast(
-            method_name="reset_faiss_index",
-            deployment_name="NavAgentDeployment",
-            namespace="serve",
-            app_name="default",
-            request=request
-        )
-        return {"status": "OK"}
 
     return router

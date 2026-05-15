@@ -6,11 +6,11 @@ from typing import Dict, Any
 from dotenv import load_dotenv
 load_dotenv()
 from ark_nav.domains.yanglaoxian.router_schemas import OneKeyResult, XiaoAnRobotRequests, OneKeyLLMResult, KnowledgeInfo
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api, fetch_rag
+from ark_nav.core.services.xiezhi_http import call_bigmodel_api
+from ark_nav.core.services.knowledge_base import KnowledgeBase
 from ark_nav.core.utils.http_client_manager import get_client
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 from ark_nav.domains.yanglaoxian.prompts import ONEKEY_INTENT_CLASSIFIER
-import copy
 
 logger = get_logger("ark_nav_OneKey")
 
@@ -22,28 +22,22 @@ async def classify_user_intent(
         app_key: str,
         app_secret: str,
         user_message: str,
-        agent_pfm_kb_svc
+        knowledge_base: KnowledgeBase,
 ) -> OneKeyLLMResult:
     """
-    调用 OpenAI 接口判断用户意图是否属于寿险范畴。
+    调用大模型 API 判断用户意图。
 
     Args:
-        msg_id (str): 信息id
-        scene_id (str)
-        app_key (str): 应用密钥
-        app_secret (str): 应用密钥
-        user_message (str): 用户最新输入
-        agent_pfm_kb_svc: 本地知识库服务
+        msg_id: 消息 id
+        scene_id: 大模型场景 id
+        app_key: 应用 key
+        app_secret: 应用 secret
+        user_message: 用户最新输入
+        knowledge_base: 知识库抽象，模式由全局配置决定
     """
-    if not all([app_key, app_secret,user_message]):
+    if not all([app_key, app_secret, user_message]):
         raise ValueError("缺少必要参数: user_message、APP_KEY、APP_SECRET")
-    enable_local_kg = os.getenv("ENABLE_LOCAL_KG", "False").strip().lower() == "true"
-    if enable_local_kg:
-        data = await agent_pfm_kb_svc.search(query="养老险一键到底意图识别", top_k=1, kb_type="faq")
-        search_result = data[0].get("answer") if len(data) >= 1 else None
-        system_message = search_result or ONEKEY_INTENT_CLASSIFIER
-    else:
-        system_message = await fetch_rag(query="养老险一键到底意图识别", kb_type=["faq"]) or ONEKEY_INTENT_CLASSIFIER
+    system_message = await knowledge_base.fetch_faq_answer(query="养老险一键到底意图识别") or ONEKEY_INTENT_CLASSIFIER
 
     messages = [
         {
@@ -138,27 +132,22 @@ class XiaoAnRobot:
 
 class OneKeyService:
     faiss_model = "faiss_index.index"
-    knowledge_base = "ylx_onekey_knowledge_base.xlsx"
+    knowledge_base_file = "ylx_onekey_knowledge_base.xlsx"
 
-    def __init__(self, agent_pfm_kb_svc, t: float=0.85):
+    def __init__(self, knowledge_base: KnowledgeBase, t: float = 0.85):
         self.t = t
         self.robot = XiaoAnRobot()
         self.scene_id = os.getenv("INTENT_REWRITE_SCENE_ID")
         self.app_key = os.getenv("INTENT_REWRITE_APP_KEY")
         self.app_secret = os.getenv("INTENT_REWRITE_APP_SECRET")
-        self.agent_pfm_kb_svc = agent_pfm_kb_svc
+        self.knowledge_base = knowledge_base
 
     @print_execution_time
     async def get_onekey_result(self, msg_id: str, llm_result: OneKeyLLMResult, card_content) -> OneKeyResult:
-        enable_local_kg = os.getenv("ENABLE_LOCAL_KG", "False").strip().lower() == "true"
-        if enable_local_kg:
-            data = await self.agent_pfm_kb_svc.search(query=llm_result.sub_intent, top_k=1, kb_type="table")
-            search_result = data[0] if len(data) >= 1 else None
-            logger.info(f"{msg_id}, 查询知识table: {search_result}")
-            knowledge = copy.copy(search_result)
-            knowledge["sub_category_i"] = knowledge.get("text")
-        else:
-            knowledge = await fetch_rag(query=llm_result.sub_intent, kb_type=["table"], score_threshold=self.t)
+        knowledge = await self.knowledge_base.fetch_table_knowledge(
+            query=llm_result.sub_intent, score_threshold=self.t,
+        )
+        logger.info(f"{msg_id}, 查询知识table: {knowledge}")
 
         if knowledge is None:
             logger.info(f"{msg_id}, 【非一键场景 - 无知识库配置】")
@@ -205,7 +194,7 @@ class OneKeyService:
         if channel == "ylXian":
             llm_result = await classify_user_intent(
                 msg_id=msg_id, scene_id=self.scene_id, app_key=self.app_key,
-                app_secret=self.app_secret, user_message=message, agent_pfm_kb_svc=self.agent_pfm_kb_svc)
+                app_secret=self.app_secret, user_message=message, knowledge_base=self.knowledge_base)
             if llm_result.domain == "其他" or llm_result.sub_intent == "其他":
                 return OneKeyResult(card_content=data)
             else:

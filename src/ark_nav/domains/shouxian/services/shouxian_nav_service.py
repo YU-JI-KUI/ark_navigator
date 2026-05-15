@@ -13,7 +13,7 @@ load_dotenv()
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 from ark_nav.core.utils.http_client_manager import get_client
 from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, ChatCompletionResponse, IntentRequest, IntentResult, SearchIntentRequest
-from ark_nav.core.services.xiezhi_http import fetch_rag
+from ark_nav.core.services.knowledge_base import KnowledgeBase
 
 LIFE_INSURANCE = "寿险意图"
 REJECTION = "拒识"
@@ -167,9 +167,9 @@ def _parse_rag_answer(rag_answer: str | None) -> dict[str, str]:
 
 class ShouXianNavService:
 
-    def __init__(self, shouxian_intent_agent, agent_pfm_kb_svc):
+    def __init__(self, shouxian_intent_agent, knowledge_base: KnowledgeBase):
         self.intent_recognition_service = IntentRecognitionService()
-        self.rag_service = RagService(agent_pfm_kb_svc)
+        self.rag_service = RagService(knowledge_base)
         self.classify_service = ClassifyService(shouxian_intent_agent)
 
     @staticmethod
@@ -464,28 +464,19 @@ class IntentRecognitionService:
 
 class RagService:
 
-    def __init__(self, agent_pfm_kb_svc):
-        self.agent_pfm_kb_svc = agent_pfm_kb_svc
+    def __init__(self, knowledge_base: KnowledgeBase):
+        self.knowledge_base = knowledge_base
 
     @print_execution_time
     async def fetch_rag(self, msg_id: str, message: str):
-        rag_answer = await self._fetch_rag_remote(message=message)
+        rag_answer = await self._fetch_faq(message=message)
         rag_answer = rag_answer if rag_answer else ""
-        logger.info(f'msg_id = {msg_id} message = {message} 知识库返回结果 = {rag_answer}')
+        logger.info(f"fetch_rag msg_id={msg_id} message={message} result={rag_answer}")
         return rag_answer
 
     @cached(ttl=600, namespace="shouxian", serializer=StringSerializer(), noself=True)
-    async def _fetch_rag_remote(self, message: str):
-        enable_local_kg = os.getenv("ENABLE_LOCAL_KG", "False").strip().lower() == "true"
-        if enable_local_kg:
-            logger.info("query from local knowledge base")
-            data = await self.agent_pfm_kb_svc.search(query=message, score_threshold=0.9, top_k=1, kb_type="faq")
-            rag_answer = data[0].get("answer") if len(data) >= 1 else None
-            return rag_answer
-        else:
-            logger.info("query from remote knowledge base")
-            rag_answer = await fetch_rag(query=message, kb_type=["faq"], kb_ids=[os.getenv("SHOUXIAN_AGENT_PLATFORM_KG_ID")])
-            return rag_answer
+    async def _fetch_faq(self, message: str):
+        return await self.knowledge_base.fetch_faq_answer(query=message, score_threshold=0.9)
 
 
 class ClassifyService:

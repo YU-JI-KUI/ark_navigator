@@ -1,5 +1,13 @@
 """配置管理"""
+from enum import Enum
+
 from pydantic_settings import BaseSettings
+
+
+class KnowledgeBaseMode(str, Enum):
+    """知识库实现模式"""
+    LOCAL = "local"     # 本地 FAISS 索引
+    REMOTE = "remote"   # 远程智能体平台 REST API
 
 
 class Settings(BaseSettings):
@@ -16,6 +24,10 @@ class Settings(BaseSettings):
     faiss_index_path: str = "./data/faiss_index"
     faiss_dimension: int = 768  # bge-base-zh
     top_k: int = 10
+
+    # 知识库配置
+    kb_mode: KnowledgeBaseMode = KnowledgeBaseMode.LOCAL
+    kb_sync_time: str = "09:30"  # 每日同步时间，HH:MM 24 小时制
 
     # 服务配置
     port: int = 8080

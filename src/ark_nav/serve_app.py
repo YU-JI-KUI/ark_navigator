@@ -7,7 +7,7 @@ import ray
 from ray import serve
 
 from ark_nav.core.models import (
-    RAGModelDeployment
+    EmbeddingModelDeployment
 )
 
 from ark_nav.ark_nav_api import APIDeployment
@@ -45,11 +45,11 @@ def build_app(args=None):
     print("=" * 60)
 
     # 1. 模型层（GPU单副本）
-    rag_models = RAGModelDeployment.bind()
+    embedding_model = EmbeddingModelDeployment.bind()
 
     # 2. Agent层（CPU多副本自动扩展）
-    shouxian_nav_agent = NavAgentDeployment.bind(rag_models)
-    ylx_intent_agent = NavYLXAgentDeployment.bind(rag_models)
+    shouxian_nav_agent = NavAgentDeployment.bind(embedding_model)
+    ylx_intent_agent = NavYLXAgentDeployment.bind(embedding_model)
 
     # 4. API入口
     app = APIDeployment.bind(

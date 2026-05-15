@@ -73,8 +73,3 @@ class ChatCompletionResponse(BaseModel):
     openId: str = ""
     sa_business_type: str = ""
     sa_business_data: str = ""
-
-@dataclass
-class AgentPfmKbRequest:
-    kg_id: str
-    is_reload: bool = False

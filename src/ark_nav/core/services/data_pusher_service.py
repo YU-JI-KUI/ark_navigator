@@ -38,7 +38,7 @@ class DataPusherService:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(self.url, json=payload)
-                _logger.info("已推送 %d 条数据到Argilla, 状态码: %s", len(batch), response.status_code)
+                _logger.info(f"已推送 {len(batch)} 条数据到Argilla, 状态码: {response.status_code}")
             except Exception:
                 _logger.exception("推送失败")
 

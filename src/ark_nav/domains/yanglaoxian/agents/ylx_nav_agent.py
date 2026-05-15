@@ -1,17 +1,17 @@
 import os
 import time
-from typing import List, Optional, Dict, Any
 from ray import serve
 import traceback
 
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api, fetch_rag
+from ark_nav.core.services.xiezhi_http import call_bigmodel_api
 from ark_nav.core.utils.nav_logger import get_logger, setup_logging, propagate_trace
 from ark_nav.domains.shouxian.router_schemas import IntentResult
 from ark_nav.core.utils.llm_platform_config import LLMPlfConfig
-from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest, YLXResponse, XiaoAnRobotRequests, AgentPfmKbRequest
+from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest, YLXResponse, XiaoAnRobotRequests
 from ark_nav.domains.yanglaoxian.services.onekey_service import OneKeyService, XiaoAnRobot
 from ark_nav.core.utils.httpx_deployment_decorator import with_http_client
-from ark_nav.core.services.agent_pfm_kb_service import AgentPfmKbService
+from ark_nav.core.services.knowledge_base import build_knowledge_base, bootstrap_knowledge_base
+from ark_nav.core.services.knowledge_base_scheduler import KnowledgeBaseSyncScheduler
 
 DEFAULT_PROMPT = """
 你是一个意图分类专家，你的职责仅限于"识别与判断"。你需要根据用户提问的'来源'和'问题'，进行以下意图的判断，禁止提供任何建议、解决方案或行动指引。
@@ -46,18 +46,24 @@ logger = get_logger(__name__)
 @with_http_client()
 class NavYLXAgentDeployment:
 
-    def __init__(self, rag_models_handle):
+    def __init__(self, embedding_model_handle):
         setup_logging()
-        self.rag_models_handle = rag_models_handle
+        self.embedding_model_handle = embedding_model_handle
         self.app_key = LLMPlfConfig.YLX_LLM_APP_KEY
         self.app_secret = LLMPlfConfig.YLX_LLM_APP_SECRET
         self.scene_id = LLMPlfConfig.YLX_LLM_SCENE_ID
         self.system_prompt = os.getenv("YLX_PROMPT", DEFAULT_PROMPT)
         self.robot = XiaoAnRobot()
-        self.agent_pfm_kb_svc = AgentPfmKbService(
-            rag_models_handle, domain="yanglaoxian", kg_id=os.getenv("AGENT_PLATFORM_KG_ID"))
-        self.onekey_svc = OneKeyService(self.agent_pfm_kb_svc)
-        # self.agent_pfm_kb_svc.load_index()
+        self.knowledge_base = build_knowledge_base(
+            embedding_model_handle=embedding_model_handle,
+            domain="yanglaoxian",
+            kg_id=os.getenv("AGENT_PLATFORM_KG_ID"),
+        )
+        # 同步阻塞等索引就绪：LOCAL 拉远程建索引，REMOTE 立即返回
+        bootstrap_knowledge_base(self.knowledge_base)
+        self.onekey_svc = OneKeyService(self.knowledge_base)
+        self._sync_scheduler = KnowledgeBaseSyncScheduler(self.knowledge_base)
+        self._sync_scheduler.start()
 
     @propagate_trace
     async def process(self, query: str, msg_id: str = None) -> IntentResult:
@@ -65,12 +71,7 @@ class NavYLXAgentDeployment:
             start_time = time.time()
 
             # 1. intention check via RAG
-            enable_local_kg = os.getenv("ENABLE_LOCAL_KG", "False").strip().lower() == "true"
-            if enable_local_kg:
-                knowledge = await self.agent_pfm_kb_svc.search(query=query, top_k=1, kb_type="faq", kb_labels=['hotfix'])
-                result = knowledge[0].get("answer") if len(knowledge) >= 1 else None
-            else:
-                result = await fetch_rag(query, kb_type=["faq"], labels=['hotfix'])
+            result = await self.knowledge_base.fetch_faq_answer(query=query, labels=["hotfix"])
 
             if result is not None:
                 logger.info("shortcut from RAG")
@@ -165,12 +166,3 @@ class NavYLXAgentDeployment:
             )
             return default_resp
 
-    @propagate_trace
-    async def reset_faiss_index(self, request: AgentPfmKbRequest) -> Dict[str, Any]:
-        try:
-            await self.agent_pfm_kb_svc.load_data(request.kg_id, request.is_reload)
-            return {"status": "success"}
-        except Exception as e:
-            traceback.print_exc()
-            logger.error(f"重置养老险 FAISS 索引异常:{str(e)}")
-            return {"status": f"failed -> {str(e)}"}

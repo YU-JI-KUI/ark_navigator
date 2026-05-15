@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, Any, AsyncIterator
+from typing import AsyncIterator
 
 from fastapi.responses import StreamingResponse
 from ark_agentic.core.stream import AgentStreamEvent, StreamEventBus
@@ -9,9 +9,8 @@ import asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from ark_nav.core.utils.nav_logger import get_logger, remote_with_trace
-from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, SearchIntentRequest, AgentPfmKbRequest
+from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, SearchIntentRequest
 from ark_nav.core.services.xiezhi_http import init_prompt_from_agent_rag
-from ark_nav.core.utils.broadcast_utils import broadcast
 
 logger = get_logger("ark_nav")
 
@@ -51,7 +50,7 @@ def create_shouxian_router(shouxian_nav_agent):
                     bus.on_thinking_delta(delta="正在调用寿险红利接口....")
                     output = await remote_with_trace(shouxian_nav_agent.process, request)
                     bus.emit_completed(message=json.dumps(output))
-                    logger.info("nav_agent stream done msg_id=%s", request.msg_id)
+                    logger.info(f"nav_agent stream done msg_id={request.msg_id}")
                 finally:
                     done_event.set()
 
@@ -75,7 +74,7 @@ def create_shouxian_router(shouxian_nav_agent):
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         else:
             response = await remote_with_trace(shouxian_nav_agent.process, request)
-            logger.info("nav_agent done msg_id=%s", request.msg_id)
+            logger.info(f"nav_agent done msg_id={request.msg_id}")
             return response
 
     @router.get("/refresh_prompt")
@@ -93,18 +92,5 @@ def create_shouxian_router(shouxian_nav_agent):
         """
         result = await remote_with_trace(shouxian_nav_agent.search, request)
         return result
-
-    @router.post("/reset_faiss_index")
-    async def reset_faiss_index(request: AgentPfmKbRequest) -> Dict[str, Any]:
-        """重置FAISS INDEX接口。"""
-        logger.info("reset SX faiss index")
-        broadcast(
-            method_name="reset_faiss_index",
-            deployment_name="NavAgentDeployment",
-            namespace="serve",
-            app_name="default",
-            request=request
-        )
-        return {"status": "OK"}
 
     return router
