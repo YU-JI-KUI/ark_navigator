@@ -13,8 +13,6 @@ from ark_nav.core.models import (
 from ark_nav.ark_nav_api import APIDeployment
 from ark_nav.domains.shouxian import (
     NavAgentDeployment,
-    IntentClassifyAgentDeployment,
-    ShouxianBertDeployment
 )
 from ark_nav.domains.yanglaoxian import (
     NavYLXAgentDeployment
@@ -48,17 +46,14 @@ def build_app(args=None):
 
     # 1. 模型层（GPU单副本）
     rag_models = RAGModelDeployment.bind()
-    shouxian_bert = ShouxianBertDeployment.bind()
 
     # 2. Agent层（CPU多副本自动扩展）
-    shouxian_intent_agent = IntentClassifyAgentDeployment.bind(rag_models, shouxian_bert)
-    shouxian_nav_agent = NavAgentDeployment.bind(rag_models, shouxian_intent_agent)
+    shouxian_nav_agent = NavAgentDeployment.bind(rag_models)
     ylx_intent_agent = NavYLXAgentDeployment.bind(rag_models)
 
     # 4. API入口
     app = APIDeployment.bind(
         shouxian_nav_agent,
-        shouxian_intent_agent,
         ylx_intent_agent,
     )
 
@@ -74,8 +69,8 @@ def main():
 
     # 启动Ray（如果还没启动）
     if not ray.is_initialized():
-        ray.init(address="auto", include_dashboard=True, log_to_driver=True,
-                 runtime_env={"env_vars": dotenv_values(".env")})
+        logger.info('auto start ray in local')
+        ray.init()
     # 启动Serve（配置HTTP选项）
     serve.start(
         http_options={

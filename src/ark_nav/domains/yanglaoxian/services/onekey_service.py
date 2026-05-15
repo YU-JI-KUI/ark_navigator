@@ -39,7 +39,7 @@ async def classify_user_intent(
         raise ValueError("缺少必要参数: user_message、APP_KEY、APP_SECRET")
     enable_local_kg = os.getenv("ENABLE_LOCAL_KG", "False").strip().lower() == "true"
     if enable_local_kg:
-        data = await agent_pfm_kb_svc.search(query="养老险一键到底意图识别", top_k=1, kb_type="faq", use_rerank=False)
+        data = await agent_pfm_kb_svc.search(query="养老险一键到底意图识别", top_k=1, kb_type="faq")
         search_result = data[0].get("answer") if len(data) >= 1 else None
         system_message = search_result or ONEKEY_INTENT_CLASSIFIER
     else:
@@ -152,7 +152,7 @@ class OneKeyService:
     async def get_onekey_result(self, msg_id: str, llm_result: OneKeyLLMResult, card_content) -> OneKeyResult:
         enable_local_kg = os.getenv("ENABLE_LOCAL_KG", "False").strip().lower() == "true"
         if enable_local_kg:
-            data = await self.agent_pfm_kb_svc.search(query=llm_result.sub_intent, top_k=1, kb_type="table", use_rerank=False)
+            data = await self.agent_pfm_kb_svc.search(query=llm_result.sub_intent, top_k=1, kb_type="table")
             search_result = data[0] if len(data) >= 1 else None
             logger.info(f"{msg_id}, 查询知识table: {search_result}")
             knowledge = copy.copy(search_result)

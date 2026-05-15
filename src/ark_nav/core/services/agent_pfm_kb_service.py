@@ -56,14 +56,10 @@ class AgentPfmKbService:
 
     @print_execution_time
     async def search(self, query: str, top_k: int = 5, score_threshold: float = 0.9,
-                     kb_type: str = "faq", kb_labels: List[str] = None, use_rerank=True) -> List[Dict[str, Any]]:
+                     kb_type: str = "faq", kb_labels: List[str] = None) -> List[Dict[str, Any]]:
         """异步向量检索"""
 
-        # if self.is_index_updated:
-        #     self.load_index()
-        #     self.is_index_updated = False
-
-        data = await self.retriever.search(query, top_k=20, recall_k=20, use_rerank=use_rerank)
+        data = await self.retriever.search(query, top_k=20, recall_k=20)
         results = []
         for item in data:
             score = item[1]

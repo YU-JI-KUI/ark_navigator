@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any, Dict, List, Optional,Literal
 from pydantic import BaseModel, Field
 
@@ -19,12 +18,6 @@ class IntentResult:
     source: str = "direct"  # direct(直接识别) 或 rewritten(重写后识别)
     extra: Optional[Dict[str, Any]] = None
 
-class COTType(Enum):
-    NO_COT = "no_cot"
-    COT_MODEL = "cot_model"
-    LLM_WITH_COT_RULES = "llm_with_cot_rules"
-
-
 class IntentRequest(BaseModel):
     app_key: str
     app_secret: str
@@ -36,7 +29,6 @@ class IntentRequest(BaseModel):
     energe_base: Optional[bool] = False
     return_details: Optional[bool] = False
     reject_reconfirm: Optional[bool] = False
-    cot_type: Optional[COTType] = COTType.NO_COT
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="其他元数据")
 
 # 搜索目前没有多轮对话

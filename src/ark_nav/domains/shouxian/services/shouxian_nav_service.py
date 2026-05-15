@@ -479,8 +479,7 @@ class RagService:
         enable_local_kg = os.getenv("ENABLE_LOCAL_KG", "False").strip().lower() == "true"
         if enable_local_kg:
             logger.info("query from local knowledge base")
-            data = await self.agent_pfm_kb_svc.search(query=message, score_threshold=0.9, top_k=1, kb_type="faq",
-                                                       use_rerank=False)
+            data = await self.agent_pfm_kb_svc.search(query=message, score_threshold=0.9, top_k=1, kb_type="faq")
             rag_answer = data[0].get("answer") if len(data) >= 1 else None
             return rag_answer
         else:
@@ -519,5 +518,5 @@ class ClassifyService:
             reject_reconfirm=reject_reconfirm,
             history=history
         )
-        response: IntentResult = await self.shouxian_intent_agent.classify_intent.remote(request)
+        response: IntentResult = await self.shouxian_intent_agent.classify_intent(request)
         return response.result

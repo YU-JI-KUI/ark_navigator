@@ -35,15 +35,13 @@ class APIDeployment:
 
     def __init__(self,
                  shouxian_nav_agent_handle,
-                 shouxian_intent_agent_handle,
                  ylx_intent_agent_handle):
         load_dotenv()
         setup_logging()
         self.shouxian_nav_agent = shouxian_nav_agent_handle
-        self.shouxian_intent_agent = shouxian_intent_agent_handle
         self.ylx_intent_agent = ylx_intent_agent_handle
 
-        if self.shouxian_intent_agent:
+        if self.shouxian_nav_agent:
             self.register_shouxian_routers()
             logger.info("[shouxian] API服务注册完成")
 
@@ -77,7 +75,7 @@ class APIDeployment:
 
     def register_shouxian_routers(self):
         from ark_nav.domains.shouxian import shouxian_api_router
-        shouxian_router = shouxian_api_router.create_shouxian_router(self.shouxian_intent_agent, self.shouxian_nav_agent)
+        shouxian_router = shouxian_api_router.create_shouxian_router(self.shouxian_nav_agent)
         app.include_router(shouxian_router)
 
     def register_ylx_routers(self):

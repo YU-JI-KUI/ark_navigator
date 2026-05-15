@@ -6,8 +6,6 @@ class Settings(BaseSettings):
     dev_mode: bool = False
     # 模型配置
     embedding_model: str = "/ark-nav/models/xiaobu-embedding-v2"
-    rerank_model: str = "/ark-nav/models/bge-reranker-base"
-    bert_model: str = "/ark-nav/models/bert_shouxian_base"
 
     # 批处理配置（提高吞吐量）
     embedding_batch_size: int = 32
@@ -18,7 +16,6 @@ class Settings(BaseSettings):
     faiss_index_path: str = "./data/faiss_index"
     faiss_dimension: int = 768  # bge-base-zh
     top_k: int = 10
-    rerank_threshold: float = 0.9
 
     # 服务配置
     port: int = 8080
