@@ -5,7 +5,7 @@ from ray import serve
 import traceback
 
 from ark_nav.core.services.xiezhi_http import call_bigmodel_api, fetch_rag
-from ark_nav.core.utils.nav_logger import get_logger, setup_logging
+from ark_nav.core.utils.nav_logger import get_logger, setup_logging, propagate_trace
 from ark_nav.domains.shouxian.router_schemas import IntentResult
 from ark_nav.core.utils.llm_platform_config import LLMPlfConfig
 from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest, YLXResponse, XiaoAnRobotRequests, AgentPfmKbRequest
@@ -59,6 +59,7 @@ class NavYLXAgentDeployment:
         self.onekey_svc = OneKeyService(self.agent_pfm_kb_svc)
         # self.agent_pfm_kb_svc.load_index()
 
+    @propagate_trace
     async def process(self, query: str, msg_id: str = None) -> IntentResult:
         try:
             start_time = time.time()
@@ -116,6 +117,7 @@ class NavYLXAgentDeployment:
             )
             return default_resp
 
+    @propagate_trace
     async def run(self, request: YLXRequest) -> YLXResponse:
         try:
             logger.info(f"{request.msg_id}, User request: {request}")
@@ -163,6 +165,7 @@ class NavYLXAgentDeployment:
             )
             return default_resp
 
+    @propagate_trace
     async def reset_faiss_index(self, request: AgentPfmKbRequest) -> Dict[str, Any]:
         try:
             await self.agent_pfm_kb_svc.load_data(request.kg_id, request.is_reload)

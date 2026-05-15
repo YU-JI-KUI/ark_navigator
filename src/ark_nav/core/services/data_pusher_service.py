@@ -1,7 +1,9 @@
 import asyncio
-from datetime import datetime
+import logging
 
 import httpx
+
+_logger = logging.getLogger(__name__)
 
 
 class DataPusherService:
@@ -36,9 +38,9 @@ class DataPusherService:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(self.url, json=payload)
-                print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 已推送 {len(batch)} 条数据到Argilla，状态码: {response.status_code}")
-            except Exception as e:
-                print(f"推送失败: {str(e)}")
+                _logger.info("已推送 %d 条数据到Argilla, 状态码: %s", len(batch), response.status_code)
+            except Exception:
+                _logger.exception("推送失败")
 
     async def push(self, data):
         if self.queue is None:

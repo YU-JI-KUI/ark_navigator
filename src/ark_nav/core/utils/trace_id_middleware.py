@@ -1,38 +1,98 @@
-"""FastAPI 中间件 - 统一处理请求上下文"""
+"""HTTP 入口中间件：trace_id 注入 + 请求/响应统一日志"""
+from __future__ import annotations
+
+import json
 import time
+from typing import Any
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from ark_nav.core.utils.nav_logger import set_trace_id
+from ark_nav.core.services.data_masking_service import mask_text
+from ark_nav.core.utils.nav_logger import get_logger, set_trace_id
+
+logger = get_logger(__name__)
+
+_MAX_BODY_LOG_BYTES = 8 * 1024  # 单个请求/响应 body 最多打印 8KB，超出截断
+_TRACE_HEADER = "X-Request-ID"
+
+
+def _safe_decode(body: bytes) -> str:
+    if not body:
+        return ""
+    truncated = len(body) > _MAX_BODY_LOG_BYTES
+    snippet = body[:_MAX_BODY_LOG_BYTES].decode("utf-8", errors="replace")
+    if truncated:
+        snippet += f"...[truncated {len(body) - _MAX_BODY_LOG_BYTES} bytes]"
+    return snippet
+
+
+def _format_body(raw: bytes) -> Any:
+    """尝试 JSON 解析；失败则返回原文片段"""
+    text = _safe_decode(raw)
+    if not text:
+        return None
+    masked = mask_text(text)
+    try:
+        return json.loads(masked)
+    except (ValueError, TypeError):
+        return masked
 
 
 class TraceIDMiddleware(BaseHTTPMiddleware):
-    """Trace ID 中间件
+    """统一处理 trace_id 与请求日志。
 
-    自动处理：
-    1. 从请求头 X-Request-ID 获取 trace_id
-    2. 如果没有，自动生成 UUID
-    3. 注入到响应头 X-Request-ID
-    4. 设置到 contextvars（自动传递到异步调用链）
+    - 从 `X-Request-ID` 取 trace_id；缺失则自动生成
+    - 设置到 ContextVar，整条异步链路自动携带
+    - 在响应头回写 trace_id
+    - 自动打印 request_in / request_out 日志，含 path / payload / status / cost / response
     """
 
     async def dispatch(self, request: Request, call_next):
-        start = time.time()
-        # 从请求头获取或自动生成 trace_id
-        trace_id = request.headers.get('X-Request-ID')
-        print("X-Request-ID:", trace_id)
-        trace_id = set_trace_id(trace_id)
-        print("trace_id:", trace_id)
+        trace_id = set_trace_id(request.headers.get(_TRACE_HEADER))
 
-        print(f"[INGRESS START] path={request.url.path}, trace_id={trace_id}, ts={start}")
-        # 处理请求
-        response: Response = await call_next(request)
+        # 提前消费 body 以便打日志；同时塞回 receive，避免下游读不到
+        body_bytes = await request.body()
 
-        end = time.time()
-        print(f"[INGRESS END] path={request.url.path}, trace_id={trace_id}, latency={end - start:.3f}s")
+        async def _replay_receive():
+            return {"type": "http.request", "body": body_bytes, "more_body": False}
 
-        # 添加到响应头
-        response.headers['X-Request-ID'] = trace_id
+        request._receive = _replay_receive  # type: ignore[attr-defined]
 
-        return response
+        start = time.perf_counter()
+        logger.info(
+            "request_in method=%s path=%s payload=%s",
+            request.method,
+            request.url.path,
+            _format_body(body_bytes),
+        )
+
+        status_code = 500
+        response_body = b""
+        try:
+            response: Response = await call_next(request)
+            status_code = response.status_code
+
+            chunks = []
+            async for chunk in response.body_iterator:
+                chunks.append(chunk)
+            response_body = b"".join(chunks)
+
+            new_response = Response(
+                content=response_body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.media_type,
+            )
+            new_response.headers[_TRACE_HEADER] = trace_id
+            return new_response
+        finally:
+            cost_ms = (time.perf_counter() - start) * 1000
+            logger.info(
+                "request_out method=%s path=%s status=%s cost_ms=%.2f response=%s",
+                request.method,
+                request.url.path,
+                status_code,
+                cost_ms,
+                _format_body(response_body),
+            )

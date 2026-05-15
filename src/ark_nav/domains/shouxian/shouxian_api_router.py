@@ -8,7 +8,7 @@ from ark_agentic.core.stream.output_formatter import create_formatter
 import asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from ark_nav.core.utils.nav_logger import get_logger
+from ark_nav.core.utils.nav_logger import get_logger, remote_with_trace
 from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, SearchIntentRequest, AgentPfmKbRequest
 from ark_nav.core.services.xiezhi_http import init_prompt_from_agent_rag
 from ark_nav.core.utils.broadcast_utils import broadcast
@@ -49,9 +49,9 @@ def create_shouxian_router(shouxian_nav_agent):
                 try:
                     bus.emit_created("收到您的消息，正在处理中...")
                     bus.on_thinking_delta(delta="正在调用寿险红利接口....")
-                    output = await shouxian_nav_agent.process.remote(request)
+                    output = await remote_with_trace(shouxian_nav_agent.process, request)
                     bus.emit_completed(message=json.dumps(output))
-                    logger.info(f"{request.msg_id}, 智能体结果: {output}")
+                    logger.info("nav_agent stream done msg_id=%s", request.msg_id)
                 finally:
                     done_event.set()
 
@@ -74,8 +74,8 @@ def create_shouxian_router(shouxian_nav_agent):
 
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         else:
-            response = await shouxian_nav_agent.process.remote(request)
-            logger.info(f"{request.msg_id}, 智能体结果: {response}")
+            response = await remote_with_trace(shouxian_nav_agent.process, request)
+            logger.info("nav_agent done msg_id=%s", request.msg_id)
             return response
 
     @router.get("/refresh_prompt")
@@ -91,7 +91,7 @@ def create_shouxian_router(shouxian_nav_agent):
         """
         搜索 API
         """
-        result = await shouxian_nav_agent.search.remote(request)
+        result = await remote_with_trace(shouxian_nav_agent.search, request)
         return result
 
     @router.post("/reset_faiss_index")

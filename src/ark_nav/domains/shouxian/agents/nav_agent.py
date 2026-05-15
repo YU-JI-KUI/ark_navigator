@@ -1,12 +1,16 @@
 """寿险小导航智能体 - 合并意图识别与导航功能"""
 import os
-import traceback
 from typing import Dict, Any
 
 from fastapi import HTTPException
 from ray import serve
 
-from ark_nav.core.utils.nav_logger import get_logger, setup_logging, print_execution_time
+from ark_nav.core.utils.nav_logger import (
+    get_logger,
+    setup_logging,
+    print_execution_time,
+    propagate_trace,
+)
 from ark_nav.core.utils.httpx_deployment_decorator import with_http_client
 
 from ark_nav.domains.shouxian.router_schemas import (
@@ -55,25 +59,28 @@ class NavAgentDeployment:
         # 把自身作为 intent agent 注入，让 ClassifyService 进程内直接调用
         self.svc = ShouXianNavService(self, self.agent_pfm_kb_svc)
 
+    @propagate_trace
     async def process(self, request: ChatCompletionRequest):
-        logger.info(f"msg_id = {request.msg_id}, Request Payload = {request}")
+        logger.info("nav_agent.process msg_id=%s", request.msg_id)
         response = await self.svc.run(msg_id=request.msg_id, request=request)
         return response
 
+    @propagate_trace
     async def reset_faiss_index(self, request: AgentPfmKbRequest) -> Dict[str, Any]:
         try:
             await self.agent_pfm_kb_svc.load_data(request.kg_id, request.is_reload)
             return {"status": "success"}
-        except Exception as e:
-            traceback.print_exc()
-            logger.error(f"重置寿险 FAISS 索引异常:{str(e)}")
-            return {"status": f"failed -> {str(e)}"}
+        except Exception:
+            logger.exception("重置寿险 FAISS 索引异常")
+            return {"status": "failed"}
 
+    @propagate_trace
     async def search(self, request: SearchIntentRequest):
-        logger.info(f"Search API: {request.msg_id}, User request: {request}")
+        logger.info("nav_agent.search msg_id=%s", request.msg_id)
         response = await self.svc.search(request=request)
         return response
 
+    @propagate_trace
     @print_execution_time
     async def classify_intent(self, request: IntentRequest) -> IntentResult:
         try:

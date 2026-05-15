@@ -8,9 +8,8 @@ from ark_agentic.core.stream import AgentStreamEvent, StreamEventBus
 from ark_agentic.core.stream.output_formatter import create_formatter
 import asyncio
 from ark_nav.core.utils.broadcast_utils import broadcast
-from ark_nav.core.utils.nav_logger import get_logger
+from ark_nav.core.utils.nav_logger import get_logger, push_to_argilla, remote_with_trace
 from ark_nav.core.services.xiezhi_http import init_prompt_from_agent_rag
-from ark_nav.core.utils.nav_logger import push_to_argilla
 from ark_nav.domains.shouxian.router_schemas import IntentRequest, IntentResult
 from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest, AgentPfmKbRequest
 
@@ -36,7 +35,7 @@ def create_router(agent_handler):
         接收 app_key、app_secret 和 user_message，返回意图分类结果。
         打印请求头和请求体日志。
         """
-        result = await agent_handler.process.remote(request.user_message, request.history)
+        result = await remote_with_trace(agent_handler.process, request.user_message, request.history)
         return result
 
     @router.post("/navi")
@@ -60,9 +59,9 @@ def create_router(agent_handler):
                 try:
                     bus.emit_created("收到您的消息，正在处理中...")
                     bus.on_thinking_delta(delta="正在调用寿险红利接口....")
-                    output = await agent_handler.run.remote(request)
+                    output = await remote_with_trace(agent_handler.run, request)
                     bus.emit_completed(message=json.dumps(output.to_dict()))
-                    logger.info(f"{request.msg_id}, 智能体结果: {output.to_dict()}")
+                    logger.info("ylx agent stream done msg_id=%s", request.msg_id)
                 finally:
                     done_event.set()
 
@@ -85,8 +84,8 @@ def create_router(agent_handler):
 
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         else:
-            response = await agent_handler.run.remote(request)
-            logger.info(f"{request.msg_id}, 智能体结果: {response.to_dict()}")
+            response = await remote_with_trace(agent_handler.run, request)
+            logger.info("ylx agent done msg_id=%s", request.msg_id)
             return response
 
     @router.post("/reset_faiss_index")

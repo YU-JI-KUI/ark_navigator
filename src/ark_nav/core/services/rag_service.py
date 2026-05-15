@@ -6,6 +6,10 @@ from typing import List, Dict, Any, Optional, Tuple
 import faiss
 from rank_bm25 import BM25Okapi
 
+from ark_nav.core.utils.nav_logger import get_logger, remote_with_trace
+
+logger = get_logger(__name__)
+
 
 class HybridRetriever:
     """混合召回（Dense + BM25）"""
@@ -21,24 +25,28 @@ class HybridRetriever:
         self.chains = chains
         texts = [c.get("text", "") for c in chains]
 
-        print("构建Dense索引...")
-        embeddings = await self.rag_models_handle.batch_encode.remote(
-            texts, batch_size=32, show_progress_bar=True, normalize_embeddings=True
+        logger.info("构建Dense索引...")
+        embeddings = await remote_with_trace(
+            self.rag_models_handle.batch_encode,
+            texts,
+            batch_size=32,
+            show_progress_bar=True,
+            normalize_embeddings=True,
         )
         self.dense_index = faiss.IndexFlatIP(embeddings.shape[1])
         self.dense_index.add(embeddings.astype("float32"))
 
-        print("构建Sparse索引...")
+        logger.info("构建Sparse索引...")
         tokenized_corpus = [self._extract_keywords(text) for text in texts]
         self.sparse_index = BM25Okapi(tokenized_corpus)
 
-        print(f"索引构建完成: {len(chains)}条")
+        logger.info("索引构建完成: %d条", len(chains))
 
     def load_index(self, index_path, chains):
-        print("加载Dense索引...")
+        logger.info("加载Dense索引...")
         self.chains = chains
         self.dense_index = faiss.read_index(str(index_path))
-        print("Dense索引加载完毕...")
+        logger.info("Dense索引加载完毕...")
 
     def _extract_keywords(self, text: str) -> List[str]:
         """TF-IDF关键词提取"""
