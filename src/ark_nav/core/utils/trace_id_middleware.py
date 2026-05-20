@@ -16,6 +16,19 @@ logger = get_logger(__name__)
 _MAX_BODY_LOG_BYTES = 8 * 1024  # 单个请求/响应 body 最多打印 8KB，超出截断
 _TRACE_HEADER = "X-Request-ID"
 
+# 静默路径：基础设施探活 / 文档静态资源，不打日志、不读 body、不解析 response
+# trace_id 仍然设置并写入响应头，业务逻辑该跑跑
+_QUIET_PATHS: frozenset[str] = frozenset({
+    "/",
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/favicon.ico",
+})
+
+# 这些 HTTP 方法没有请求体，无需读 body、无需打 payload
+_METHODS_WITHOUT_BODY: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS", "DELETE"})
+
 
 def _safe_decode(body: bytes) -> str:
     if not body:
@@ -51,19 +64,31 @@ class TraceIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         trace_id = set_trace_id(request.headers.get(_TRACE_HEADER))
 
-        # 提前消费 body 以便打日志；同时塞回 receive，避免下游读不到
-        body_bytes = await request.body()
+        # 静默路径：仅设置 trace_id 与响应头，不打日志、不读 body、不抓 response
+        if request.url.path in _QUIET_PATHS:
+            response = await call_next(request)
+            response.headers[_TRACE_HEADER] = trace_id
+            return response
 
-        async def _replay_receive():
-            return {"type": "http.request", "body": body_bytes, "more_body": False}
+        # 仅对可能携带 body 的方法读取请求体并打 payload
+        has_body = request.method not in _METHODS_WITHOUT_BODY
+        body_bytes = b""
+        if has_body:
+            body_bytes = await request.body()
 
-        request._receive = _replay_receive  # type: ignore[attr-defined]
+            async def _replay_receive():
+                return {"type": "http.request", "body": body_bytes, "more_body": False}
+
+            request._receive = _replay_receive  # type: ignore[attr-defined]
 
         start = time.perf_counter()
-        logger.info(
-            f"request_in method={request.method} path={request.url.path} "
-            f"payload={_format_body(body_bytes)}"
-        )
+        if has_body:
+            logger.info(
+                f"request_in method={request.method} path={request.url.path} "
+                f"payload={_format_body(body_bytes)}"
+            )
+        else:
+            logger.info(f"request_in method={request.method} path={request.url.path}")
 
         status_code = 500
         response_body = b""
