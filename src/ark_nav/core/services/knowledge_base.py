@@ -168,27 +168,37 @@ def build_knowledge_base(
 def bootstrap_knowledge_base(knowledge_base: KnowledgeBase) -> None:
     """在 Ray Deployment 同步 __init__ 中阻塞等待索引就绪。
 
+    实测 Ray Serve 的 Deployment __init__ 在 actor 的 event loop 线程中被调用，
+    `asyncio.get_running_loop()` 总是返回非 None，因此必须用独立线程跑 asyncio.run
+    才能真正阻塞等完，否则副本会带着空索引上线。
+
     - LOCAL 模式：拉取远程数据 → 构建 FAISS 索引；启动时间会增加几十秒到几分钟
     - REMOTE 模式：reload 是 no-op，本调用迅速返回
-    - 已有运行中的 event loop（极少见的边界情况）：退化为后台任务，避免死锁
-
-    失败时抛出异常，让 Deployment 启动直接失败（fail-fast），由 Ray 决定是否重试。
+    - 失败 fail-fast：抛出异常，让 Ray 决定是否重启该副本
     """
-    logger.info(f"bootstrap_knowledge_base start domain={knowledge_base.domain}")
-    try:
-        try:
-            running_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            running_loop = None
+    import threading
 
-        if running_loop is None:
-            asyncio.run(knowledge_base.reload())
-        else:
-            # 当前线程已有 event loop（理论上 Ray Deployment __init__ 不会进这里）
-            logger.warning(
-                f"bootstrap_knowledge_base domain={knowledge_base.domain} found running loop, schedule as task"
-            )
-            running_loop.create_task(knowledge_base.reload())
+    logger.info(f"bootstrap_knowledge_base start domain={knowledge_base.domain}")
+
+    def _run_in_new_loop():
+        # 在新线程里用全新 event loop 跑 reload，与 Ray 自身的 loop 隔离
+        asyncio.run(knowledge_base.reload())
+
+    exception_box: list[BaseException] = []
+
+    def runner():
+        try:
+            _run_in_new_loop()
+        except BaseException as e:
+            exception_box.append(e)
+
+    try:
+        # 不管当前线程有没有 event loop，统一走新线程模式，行为可预测
+        worker = threading.Thread(target=runner, name=f"kb-bootstrap-{knowledge_base.domain}", daemon=True)
+        worker.start()
+        worker.join()  # 主线程阻塞等完
+        if exception_box:
+            raise exception_box[0]
     except Exception:
         logger.exception(f"bootstrap_knowledge_base failed domain={knowledge_base.domain}")
         raise

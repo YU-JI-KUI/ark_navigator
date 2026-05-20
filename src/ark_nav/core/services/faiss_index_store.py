@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from typing import List, Dict, Any
 
-from ark_nav.core.services.hybrid_retriever import HybridRetriever
+from ark_nav.core.services.dense_retriever import DenseRetriever
 from ark_nav.core.services.xiezhi_http import _get_faq_page_data, _get_faq_table_data
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 
@@ -15,14 +15,14 @@ class FaissIndexStore:
 
     职责：
     1. 从远程数据源拉取 FAQ + Table 数据
-    2. 委托 HybridRetriever 构建内存中的向量索引
+    2. 委托 DenseRetriever 构建内存中的向量索引
     3. 提供带过滤条件（kb_type / labels / score_threshold）的检索接口
 
     索引仅在内存中维护，不落盘；进程重启后由上层 LocalFaissKnowledgeBase 重新加载。
     """
 
     def __init__(self, embedding_model_handle, domain, kg_id):
-        self.retriever = HybridRetriever(embedding_model_handle)
+        self.retriever = DenseRetriever(embedding_model_handle)
         self.domain = domain
         self.is_index_updated = False
         self._initial_kg_id = kg_id
