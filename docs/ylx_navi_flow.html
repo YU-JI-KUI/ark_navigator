@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>养老险 /api/v1/ylx/navi 接口流程图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --card-bg: #ffffff;
+    --text-primary: #1f2328;
+    --text-secondary: #57606a;
+    --border: #d0d7de;
+    --accent: #0969da;
+    --warn: #bf8700;
+    --danger: #cf222e;
+    --success: #1a7f37;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    line-height: 1.6;
+  }
+
+  header {
+    background: linear-gradient(135deg, #ffffff 0%, #f0f4f8 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 32px 40px 24px;
+  }
+
+  header h1 {
+    margin: 0 0 8px 0;
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  header .subtitle {
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  header .meta {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  header .meta code {
+    background: #eaeef2;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+
+  section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 32px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  section h2 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  section h3 {
+    margin: 24px 0 12px 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin: 16px 0 24px;
+    padding: 16px;
+    background: #f6f8fa;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .legend-swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+  }
+
+  .mermaid-wrapper {
+    overflow-x: auto;
+    padding: 16px;
+    background: #fbfcfd;
+    border-radius: 6px;
+    border: 1px solid #e1e4e8;
+  }
+
+  .mermaid {
+    text-align: center;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+
+  table th, table td {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  table th {
+    background: #f6f8fa;
+    font-weight: 600;
+  }
+
+  table tr:nth-child(even) td {
+    background: #fbfcfd;
+  }
+
+  ul, ol {
+    padding-left: 24px;
+  }
+
+  li {
+    margin: 4px 0;
+  }
+
+  code {
+    background: #eaeef2;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 12.5px;
+    color: #24292f;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+
+  .badge-high { background: #ffebe9; color: var(--danger); border: 1px solid #ffabb0; }
+  .badge-mid { background: #fff8c5; color: var(--warn); border: 1px solid #d4a72c; }
+  .badge-low { background: #dafbe1; color: var(--success); border: 1px solid #b7eaca; }
+
+  .response-card {
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    margin: 8px 0;
+    background: #f6f8fa;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .response-card h4 {
+    margin: 0 0 6px 0;
+    font-size: 14px;
+    color: var(--accent);
+  }
+
+  .response-card .trigger {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+
+  .response-card.r1 { border-left-color: var(--danger); }
+  .response-card.r1 h4 { color: var(--danger); }
+  .response-card.r2 { border-left-color: var(--warn); }
+  .response-card.r2 h4 { color: var(--warn); }
+  .response-card.r6 { border-left-color: var(--success); }
+  .response-card.r6 h4 { color: var(--success); }
+
+  footer {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding: 24px;
+    margin-top: 24px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>养老险 navi 接口流程图</h1>
+  <div class="subtitle">基于 Ray Serve 的多层意图识别与一键卡片编排</div>
+  <div class="meta">
+    Endpoint: <code>POST /api/v1/ylx/navi</code> &nbsp;|&nbsp;
+    Domain: <code>yanglaoxian</code> &nbsp;|&nbsp;
+    入口文件: <code>ylx_api_router.py</code>
+  </div>
+</header>
+
+<main>
+
+<section>
+  <h2>一、接口签名</h2>
+
+  <h3>请求体 YLXRequest</h3>
+  <table>
+    <thead>
+      <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>session_id</code></td><td>str?</td><td>会话 id</td></tr>
+      <tr><td><code>msg_id</code></td><td>str?</td><td>消息 id（链路追踪用）</td></tr>
+      <tr><td><code>user_id</code></td><td>str?</td><td>用户 id</td></tr>
+      <tr><td><code>system_id</code></td><td>str?</td><td>系统 id</td></tr>
+      <tr><td><code>buChannel</code></td><td>dict?</td><td>业务渠道，包含 <code>channel</code> 字段</td></tr>
+      <tr><td><code>message</code></td><td>str</td><td><strong>用户问题（核心入参）</strong></td></tr>
+      <tr><td><code>msg_type</code></td><td>str?</td><td>消息类型</td></tr>
+      <tr><td><code>card_params</code></td><td>dict?</td><td>卡片参数</td></tr>
+      <tr><td><code>extrainfo</code></td><td>dict?</td><td>额外信息</td></tr>
+      <tr><td><code>stream</code></td><td>bool</td><td><strong>是否流式响应（决定走 SSE 还是 JSON）</strong></td></tr>
+      <tr><td><code>stream_protocol</code></td><td>enum</td><td><code>agui / internal / enterprise / alone</code>，默认 <code>enterprise</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>响应体 YLXResponse</h3>
+  <table>
+    <thead>
+      <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>code</code></td><td>str</td><td>业务状态码 <code>0</code> / <code>-1</code></td></tr>
+      <tr><td><code>code_msg</code></td><td>str</td><td>错误信息</td></tr>
+      <tr><td><code>source_bu_type</code></td><td>str</td><td>来源 BU</td></tr>
+      <tr><td><code>card_content</code></td><td>dict</td><td>卡片内容</td></tr>
+      <tr><td><code>card_type</code></td><td>str</td><td>卡片类型</td></tr>
+      <tr><td><code>service_type</code></td><td>str</td><td>服务类型 <code>""</code> / <code>"rejection"</code></td></tr>
+      <tr><td><code>extrainfo</code></td><td>dict</td><td>额外信息</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>二、完整流程图</h2>
+
+  <div class="legend">
+    <div class="legend-item"><span class="legend-swatch" style="background:#dbeafe;"></span>入口 / 路由</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#e0e7ff;"></span>业务编排</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#fef3c7;"></span>意图识别</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#ede9fe;"></span>外部依赖（小安、大模型）</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#dcfce7;"></span>知识库查询</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#bbf7d0;"></span>成功响应</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#fee2e2;"></span>错误 / 拒识响应</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#fed7aa;"></span>异常分支</div>
+  </div>
+
+  <div class="mermaid-wrapper">
+    <pre class="mermaid">
+flowchart TD
+    Start([Client POST /api/v1/ylx/navi<br/>YLXRequest]):::entry
+    Router[ylx_api_router.navi<br/>log: 'calling YLX navi endpoint']:::entry
+
+    Start --> Router
+    Router --> StreamCheck{request.stream?}:::decision
+
+    StreamCheck -->|True 流式 SSE| Stream[创建 Queue/Event/Bus<br/>启动 run_agent task<br/>返回 StreamingResponse]:::entry
+    StreamCheck -->|False JSON| Json[remote_with_trace<br/>agent_handler.run]:::entry
+
+    Stream --> Run
+    Json --> Run
+
+    Run[NavYLXAgentDeployment.run<br/>log: 'User request: ...']:::biz
+    Run --> Process[self.process query=message<br/>意图识别入口]:::intent
+
+    Process --> HotfixFetch[知识库1: hotfix FAQ<br/>knowledge_base.fetch_faq_answer<br/>query, labels=hotfix]:::kb
+    HotfixFetch --> HotfixHit{命中?}:::decision
+
+    HotfixHit -->|是| HotfixReturn[IntentResult<br/>result=hotfix答案<br/>source='rag']:::intent
+    HotfixHit -->|否| CallLLM[调大模型识别意图<br/>call_bigmodel_api]:::external
+
+    CallLLM --> LLMOk{抛异常?}:::decision
+    LLMOk -->|否| LLMReturn[IntentResult<br/>result=模型返回字符串<br/>source='direct']:::intent
+    LLMOk -->|是| Fallback[兜底 IntentResult<br/>result='养老险意图'<br/>source='direct'<br/>extra=errors]:::warn
+
+    HotfixReturn --> IntentDone
+    LLMReturn --> IntentDone
+    Fallback --> IntentDone
+
+    IntentDone[返回到 run<br/>log: '意图识别结果']:::biz
+    IntentDone --> IntentJudge{intent.result == '养老险意图'?}:::decision
+
+    IntentJudge -->|否| Resp2[★ 响应 #2<br/>code=0<br/>service_type='rejection'<br/>card_content=空]:::reject
+    IntentJudge -->|是| OnekeyProcess[onekey_svc.process<br/>msg_id, message, user_id,<br/>channel=buChannel.channel or 'ylXian']:::biz
+
+    OnekeyProcess --> XiaoanChat[知识库4: 小安机器人<br/>XiaoAnRobot.chat<br/>OAuth2 + POST]:::external
+    XiaoanChat --> XiaoanOk{抛异常?}:::decision
+    XiaoanOk -->|是| Resp1[★ 响应 #1 兜底<br/>code=-1<br/>service_type='rejection']:::error
+    XiaoanOk -->|否| ChannelJudge{channel == 'ylXian'?}:::decision
+
+    ChannelJudge -->|否| Resp3[★ 响应 #3<br/>OneKeyResult card_content=data<br/>source='ylXian']:::success
+    ChannelJudge -->|是| ClassifySub[classify_user_intent<br/>知识库2: prompt FAQ<br/>fetch_faq_answer<br/>query='养老险一键到底意图识别'<br/>or ONEKEY_INTENT_CLASSIFIER]:::kb
+
+    ClassifySub --> CallLLM2[调大模型识别 sub_intent<br/>call_bigmodel_api]:::external
+    CallLLM2 --> LLM2Ok{抛异常?}:::decision
+    LLM2Ok -->|是| EmptyLLMResult[OneKeyLLMResult 全空对象]:::warn
+    LLM2Ok -->|否| LLMResult[OneKeyLLMResult<br/>domain, sub_intent,<br/>task_type, confidence]:::intent
+
+    EmptyLLMResult --> OtherJudge
+    LLMResult --> OtherJudge
+
+    OtherJudge{domain=='其他' or<br/>sub_intent=='其他'?}:::decision
+    OtherJudge -->|是| Resp4[★ 响应 #4<br/>OneKeyResult card_content=data<br/>source='ylXian']:::success
+    OtherJudge -->|否| TableFetch[知识库3: Table<br/>fetch_table_knowledge<br/>query=sub_intent<br/>threshold=0.85]:::kb
+
+    TableFetch --> TableJudge{knowledge is None?}:::decision
+    TableJudge -->|是| Resp5a[★ 响应 #5a<br/>非一键场景-无知识库配置<br/>card_content=data<br/>source='ylXian']:::success
+
+    TableJudge -->|否| MenuJudge{task_type=='Info' and<br/>card_content.answerType=='7'?}:::decision
+    MenuJudge -->|是| Resp5b[★ 响应 #5b<br/>非一键场景-小安特殊answerType<br/>card_content=data]:::success
+    MenuJudge -->|否| BuildOnekey[进入一键场景<br/>构造 KnowledgeInfo<br/>info = KnowledgeInfo **knowledge<br/>answer = data.answer if Info else info.answer]:::biz
+
+    BuildOnekey --> BuildOk{构造抛异常?}:::decision
+    BuildOk -->|是| Resp1
+    BuildOk -->|否| Resp6[★ 响应 #6<br/>一键卡片命中<br/>card_type='onekey'<br/>card_content=拼装一键<br/>source='onekey']:::successHl
+
+    classDef entry fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a,stroke-width:1.5px;
+    classDef biz fill:#e0e7ff,stroke:#6366f1,color:#3730a3,stroke-width:1.5px;
+    classDef intent fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:1.5px;
+    classDef external fill:#ede9fe,stroke:#8b5cf6,color:#5b21b6,stroke-width:1.5px;
+    classDef kb fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.5px;
+    classDef decision fill:#f1f5f9,stroke:#64748b,color:#0f172a,stroke-width:1.5px;
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.5px;
+    classDef successHl fill:#bbf7d0,stroke:#15803d,color:#14532d,stroke-width:2px,font-weight:bold;
+    classDef reject fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-width:1.5px;
+    classDef error fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-width:2px,font-weight:bold;
+    classDef warn fill:#fed7aa,stroke:#ea580c,color:#7c2d12,stroke-width:1.5px;
+    </pre>
+  </div>
+</section>
+
+<section>
+  <h2>三、6 种最终响应</h2>
+
+  <div class="response-card r1">
+    <h4>★ 响应 #1 - 异常兜底</h4>
+    <div class="trigger">触发条件：任何步骤抛未捕获异常（如小安访问失败、KnowledgeInfo 构造失败等）</div>
+    <code>code=-1, source_bu_type=ylXian, card_type=ylXian, service_type=rejection, card_content={}</code>
+  </div>
+
+  <div class="response-card r2">
+    <h4>★ 响应 #2 - 意图非养老险</h4>
+    <div class="trigger">触发条件：意图识别结果不是"养老险意图"（如"紧急救援"、"拒识"等）</div>
+    <code>code=0, source_bu_type=ylXian, card_type=ylXian, service_type=rejection, card_content={}</code>
+  </div>
+
+  <div class="response-card">
+    <h4>★ 响应 #3 - 非 ylXian 渠道</h4>
+    <div class="trigger">触发条件：意图是养老险但渠道不是 ylXian，直接返回小安原始数据</div>
+    <code>code=0, source_bu_type=ylXian, card_type=ylXian, service_type="", card_content=小安data, source=ylXian</code>
+  </div>
+
+  <div class="response-card">
+    <h4>★ 响应 #4 - LLM 判定"其他"</h4>
+    <div class="trigger">触发条件：大模型识别 sub_intent 为"其他"或 domain 为"其他"</div>
+    <code>card_content=小安data, source=ylXian</code>
+  </div>
+
+  <div class="response-card">
+    <h4>★ 响应 #5a / #5b - 一键流程中途退出</h4>
+    <div class="trigger">
+      触发条件：
+      <ul style="margin: 4px 0;">
+        <li>5a: Table 知识库查不到对应 sub_intent</li>
+        <li>5b: task_type=="Info" 且小安 answerType=="7"（动态菜单）</li>
+      </ul>
+    </div>
+    <code>card_content=小安data, source=ylXian</code>
+  </div>
+
+  <div class="response-card r6">
+    <h4>★ 响应 #6 - 一键卡片命中（核心场景）</h4>
+    <div class="trigger">触发条件：所有检查通过，进入一键场景</div>
+    <code>code=0, card_type=onekey, source=onekey, card_content=Table 知识 + 小安 answer 拼装</code>
+  </div>
+</section>
+
+<section>
+  <h2>四、4 个知识库</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>知识库</th>
+        <th>物理位置</th>
+        <th>查询方式</th>
+        <th>阈值</th>
+        <th>触发条件</th>
+        <th>用途</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td><strong>hotfix FAQ</strong></td>
+        <td>本地 FAISS<br/>(kbType=faq, kbLabel=hotfix)</td>
+        <td>语义召回</td>
+        <td>0.9</td>
+        <td>必调（每次请求）</td>
+        <td>意图识别人工覆盖</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td><strong>prompt FAQ</strong></td>
+        <td>本地 FAISS<br/>(kbType=faq, 固定 query)</td>
+        <td>固定字符串召回</td>
+        <td>0.9</td>
+        <td>仅一键流程</td>
+        <td>system_prompt 管理</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td><strong>Table</strong></td>
+        <td>本地 FAISS<br/>(kbType=table)</td>
+        <td>sub_intent 语义召回</td>
+        <td>0.85</td>
+        <td>仅一键流程</td>
+        <td>一键卡片数据</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td><strong>小安</strong></td>
+        <td>外部 HTTP 服务</td>
+        <td>直接调 chat 接口</td>
+        <td>无</td>
+        <td>必调（识别为养老险意图后）</td>
+        <td>兜底回答</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="color: var(--text-secondary); font-size: 13px; margin-top: 12px;">
+    <strong>说明</strong>：知识库 1/2/3 是<strong>同一份 FAISS 索引</strong>，通过 <code>kbType</code> 与 <code>kbLabel</code> 区分用途。
+    最坏情况一次请求触发 <strong>4 次知识库访问 + 2 次大模型调用</strong>。
+  </p>
+</section>
+
+<section>
+  <h2>五、外部依赖统计</h2>
+  <table>
+    <thead>
+      <tr><th>外部系统</th><th>触发条件</th><th>调用次数</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>FAISS 本地索引（hotfix FAQ）</td><td>必触发</td><td>1 次</td></tr>
+      <tr><td>平安大模型 API（意图识别）</td><td>hotfix 未命中</td><td>1 次</td></tr>
+      <tr><td>FAISS 本地索引（养老一键 prompt）</td><td>意图=养老险 且 channel=ylXian</td><td>1 次</td></tr>
+      <tr><td>小安 OAuth2</td><td>必触发</td><td>0-2 次（视 token 状态）</td></tr>
+      <tr><td>小安 chat API</td><td>必触发</td><td>1-2 次（视 token 失效重试）</td></tr>
+      <tr><td>平安大模型 API（一键识别）</td><td>意图=养老险 且 channel=ylXian</td><td>1 次</td></tr>
+      <tr><td>FAISS 本地索引（一键 table）</td><td>一键识别不为"其他"</td><td>1 次</td></tr>
+    </tbody>
+  </table>
+  <p style="color: var(--text-secondary); font-size: 13px; margin-top: 12px;">
+    <strong>延迟敏感点</strong>：两次大模型 API 调用是串行的，是延迟的主要来源。
+  </p>
+</section>
+
+<section>
+  <h2>六、流程中发现的问题（参考）</h2>
+
+  <h3><span class="badge badge-high">高危</span></h3>
+  <ol>
+    <li><strong>流式分支 formatter 写错了 source_bu_type</strong>：养老险接口里硬编码了 <code>"shouxian"</code> 和"正在调用寿险红利接口...."文案</li>
+    <li><strong>意图识别异常兜底偷偷走"养老险意图"</strong>：系统故障时用户会进入一键流程，运维难以察觉</li>
+    <li><strong>classify_user_intent 异常返回全空对象，不等于"其他"</strong>：会继续走 get_onekey_result，查空 query 的 table，可能误命中</li>
+  </ol>
+
+  <h3><span class="badge badge-mid">中危</span></h3>
+  <ol start="4">
+    <li><strong>大模型返回的意图字符串没校验</strong>：模型返回带引号/前缀/全角空格都会判错</li>
+    <li><strong>get_onekey_result 的 except 抛新异常被翻译成 code=-1</strong>：fallback 到小安数据可能更合理</li>
+    <li><strong>小安 chat 的重试只针对 token 失效，网络错误不重试</strong>：网络抖动一次直接 code=-1</li>
+  </ol>
+
+  <h3><span class="badge badge-low">低危</span></h3>
+  <ol start="7">
+    <li>流式响应实际是"伪流式"，仍同步等 run 完成才发完成事件</li>
+    <li>run_agent 的 finally 在异常时也只 set done_event，<strong>异常本身没传播给客户端</strong></li>
+    <li><code>request.buChannel.get(...)</code> 潜在 NPE（buChannel 可能为 None）</li>
+    <li>PUSHER 在 module-level 实例化，env 未设时 url 为 None</li>
+  </ol>
+</section>
+
+<footer>
+  Generated for ark-navigator | yanglaoxian domain | navi endpoint analysis
+</footer>
+
+</main>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    securityLevel: 'loose',
+    flowchart: {
+      curve: 'basis',
+      padding: 20,
+      nodeSpacing: 50,
+      rankSpacing: 70,
+      htmlLabels: true
+    },
+    themeVariables: {
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif',
+      fontSize: '13px'
+    }
+  });
+</script>
+
+</body>
+</html>
