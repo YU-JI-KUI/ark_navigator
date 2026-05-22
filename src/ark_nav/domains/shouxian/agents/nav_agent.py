@@ -61,17 +61,25 @@ class NavAgentDeployment:
         bootstrap_knowledge_base(self.knowledge_base)
         # 把自身作为 intent agent 注入，让 ClassifyService 进程内直接调用
         self.svc = ShouXianNavService(self, self.knowledge_base)
+        # 调度器在首个请求时懒启动，确保 task 跑在 actor 真实 event loop 上
         self._sync_scheduler = KnowledgeBaseSyncScheduler(self.knowledge_base)
-        self._sync_scheduler.start()
+        self._scheduler_started = False
+
+    async def _ensure_scheduler_started(self) -> None:
+        if not self._scheduler_started:
+            self._scheduler_started = True
+            await self._sync_scheduler.start_async()
 
     @propagate_trace
     async def process(self, request: ChatCompletionRequest):
+        await self._ensure_scheduler_started()
         logger.info(f"nav_agent.process msg_id={request.msg_id}")
         response = await self.svc.run(msg_id=request.msg_id, request=request)
         return response
 
     @propagate_trace
     async def search(self, request: SearchIntentRequest):
+        await self._ensure_scheduler_started()
         logger.info(f"nav_agent.search msg_id={request.msg_id}")
         response = await self.svc.search(request=request)
         return response
@@ -79,6 +87,7 @@ class NavAgentDeployment:
     @propagate_trace
     @print_execution_time
     async def classify_intent(self, request: IntentRequest) -> IntentResult:
+        await self._ensure_scheduler_started()
         try:
             if request.reject_reconfirm:
                 logger.debug("reject_reconfirm is True, call classify_user_intent_advance")

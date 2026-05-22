@@ -62,11 +62,18 @@ class NavYLXAgentDeployment:
         # 同步阻塞等索引就绪：LOCAL 拉远程建索引，REMOTE 立即返回
         bootstrap_knowledge_base(self.knowledge_base)
         self.onekey_svc = OneKeyService(self.knowledge_base)
+        # 调度器在首个请求时懒启动，确保 task 跑在 actor 真实 event loop 上
         self._sync_scheduler = KnowledgeBaseSyncScheduler(self.knowledge_base)
-        self._sync_scheduler.start()
+        self._scheduler_started = False
+
+    async def _ensure_scheduler_started(self) -> None:
+        if not self._scheduler_started:
+            self._scheduler_started = True
+            await self._sync_scheduler.start_async()
 
     @propagate_trace
     async def process(self, query: str, msg_id: str = None) -> IntentResult:
+        await self._ensure_scheduler_started()
         try:
             start_time = time.time()
 
@@ -120,6 +127,7 @@ class NavYLXAgentDeployment:
 
     @propagate_trace
     async def run(self, request: YLXRequest) -> YLXResponse:
+        await self._ensure_scheduler_started()
         try:
             logger.info(f"{request.msg_id}, User request: {request}")
             message = request.message
