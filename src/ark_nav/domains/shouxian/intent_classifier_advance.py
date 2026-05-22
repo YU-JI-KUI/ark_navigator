@@ -260,7 +260,10 @@ Output:
 
             rewritten_query = response.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
-            logger.info(f"rewritten query is: {rewritten_query}")
+            # 日志平台按行收集，多行 JSON 会被截断；这里只为打日志构造单行版本，
+            # 不动 rewritten_query 原变量，避免影响后续 json.loads 解析
+            _log_query = rewritten_query.replace("\n", " ").replace("\r", " ")
+            logger.info(f"rewritten query is: {_log_query}")
             try:
                 parsed = json.loads(rewritten_query)
                 if isinstance(parsed, dict) and "rewritten_query" in parsed:
@@ -269,8 +272,8 @@ Output:
                     rewritten_query = parsed.strip()
             except json.JSONDecodeError:
                 logger.warning(
-                    f"rewrite query is not str or json string with \"rewritten_query\" field: {rewritten_query}",
-                    rewritten_query)
+                    f"rewrite query is not str or json with 'rewritten_query' field: {_log_query}"
+                )
 
             # 步骤2：使用重写后的问题调用意图识别API
             result = await self._classify_direct(rewritten_query)
