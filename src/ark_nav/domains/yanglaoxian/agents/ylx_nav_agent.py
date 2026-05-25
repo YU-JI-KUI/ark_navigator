@@ -31,6 +31,13 @@ QUERY_TEMPLATE = """
 DEFAULT_CHANNEL = "好福利app"
 logger = get_logger(__name__)
 
+# 养老险 Agent 副本配置（QPS 远低于寿险）
+# - min=1 / max=4：养老险流量小，1 副本日常够用，max=4 应对意外峰值
+# - target=8：和寿险对齐，便于运维统一理解
+# - downscale_delay=300：缩容更慢，避免抖动
+_YLX_AGENT_MIN_REPLICAS = int(os.getenv("YLX_AGENT_MIN_REPLICAS", 1))
+_YLX_AGENT_MAX_REPLICAS = int(os.getenv("YLX_AGENT_MAX_REPLICAS", 4))
+
 
 @serve.deployment(
     name="NavYLXAgentDeployment",
@@ -38,9 +45,11 @@ logger = get_logger(__name__)
         "num_cpus": 0.5,
     },
     autoscaling_config={
-        "min_replicas": 1,
-        "max_replicas": 4,
-        "target_num_ongoing_requests_per_replica": 10
+        "min_replicas": _YLX_AGENT_MIN_REPLICAS,
+        "max_replicas": _YLX_AGENT_MAX_REPLICAS,
+        "target_num_ongoing_requests_per_replica": 8,
+        "upscale_delay_s": 3,
+        "downscale_delay_s": 300,
     }
 )
 @with_http_client()

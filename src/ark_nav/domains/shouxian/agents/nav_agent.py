@@ -26,8 +26,14 @@ from ark_nav.domains.shouxian.intent_classifier_simple import classify_user_inte
 
 logger = get_logger(__name__)
 
-MIN_REPLICAS = int(os.getenv("RAY_MIN_REPLICAS", 10))
-INITIAL_REPLICAS = int(os.getenv("RAY_INITIAL_REPLICAS", 10))
+# 寿险 Agent 副本配置
+# - min=3：日常低峰够用，autoscaling 会在压力大时自动扩容到 max
+# - max=16：覆盖大促等峰值；如果常规也撑不住，再调高这个上限
+# - target_ongoing=8：每副本平均处理 8 个并发请求时触发扩容
+# - downscale_delay=300：缩容更慢，避免日常流量起伏导致频繁扩缩
+# - upscaling_factor=1.5：突发流量时扩容更激进（默认 1.0 是线性增长）
+_SHOUXIAN_AGENT_MIN_REPLICAS = int(os.getenv("SHOUXIAN_AGENT_MIN_REPLICAS", 3))
+_SHOUXIAN_AGENT_MAX_REPLICAS = int(os.getenv("SHOUXIAN_AGENT_MAX_REPLICAS", 16))
 
 
 @serve.deployment(
@@ -37,13 +43,12 @@ INITIAL_REPLICAS = int(os.getenv("RAY_INITIAL_REPLICAS", 10))
         "num_cpus": 0.5,
     },
     autoscaling_config={
-        "min_replicas": MIN_REPLICAS,
-        "max_replicas": 16,
-        "initial_replicas": INITIAL_REPLICAS,
-        "target_ongoing_requests": 5,
+        "min_replicas": _SHOUXIAN_AGENT_MIN_REPLICAS,
+        "max_replicas": _SHOUXIAN_AGENT_MAX_REPLICAS,
+        "target_ongoing_requests": 8,
         "upscale_delay_s": 3,
-        "downscale_delay_s": 60,
-        "upscaling_factor": 1.0,
+        "downscale_delay_s": 300,
+        "upscaling_factor": 1.5,
     }
 )
 @with_http_client()

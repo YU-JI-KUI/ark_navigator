@@ -8,7 +8,9 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from ark_nav.core.utils.nav_logger import get_logger, setup_logging
 from ark_nav.core.utils.trace_id_middleware import TraceIDMiddleware
 
-MIN_REPLICAS = int(os.getenv("RAY_MIN_REPLICAS", 3))
+# 网关层固定副本数：主要为了容灾，不需要弹性扩缩容
+# 业务高峰由下游 Agent 副本承接，网关只是 I/O 转发，单副本足以应对数百 QPS
+_API_REPLICAS = int(os.getenv("API_REPLICAS", 3))
 
 app = FastAPI(
     title="万能服务-Ark-Navigator",
@@ -23,7 +25,7 @@ logger = get_logger(__name__)
 
 @serve.deployment(
     name="ark-navigator-fastapi",
-    num_replicas=MIN_REPLICAS,
+    num_replicas=_API_REPLICAS,
     max_ongoing_requests=100,
     ray_actor_options={
         "num_cpus": 0.5,

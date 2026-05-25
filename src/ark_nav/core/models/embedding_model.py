@@ -7,7 +7,10 @@ from ray import serve
 from ark_nav.config import settings
 from ark_nav.core.utils.nav_logger import setup_logging, propagate_trace
 
-MIN_REPLICAS = int(os.getenv("RAY_MIN_REPLICAS", 2))
+# GPU 副本配置：GPU 是稀缺资源，min/max 都需要独立控制
+# target=50 看似很高，但配合 @serve.batch(max_batch_size=32) 实际是"1.5 个 GPU batch 在排队"
+_EMBEDDING_MIN_REPLICAS = int(os.getenv("EMBEDDING_MIN_REPLICAS", 2))
+_EMBEDDING_MAX_REPLICAS = int(os.getenv("EMBEDDING_MAX_REPLICAS", 4))
 
 
 @serve.deployment(
@@ -18,8 +21,8 @@ MIN_REPLICAS = int(os.getenv("RAY_MIN_REPLICAS", 2))
         "num_cpus": 0 if settings.use_gpu else 1,
     },
     autoscaling_config={
-        "min_replicas": MIN_REPLICAS,
-        "max_replicas": 4,
+        "min_replicas": _EMBEDDING_MIN_REPLICAS,
+        "max_replicas": _EMBEDDING_MAX_REPLICAS,
         "target_num_ongoing_requests_per_replica": 50,
     },
 )
