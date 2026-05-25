@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import random
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
 from ark_nav.config import settings
 from ark_nav.core.services.knowledge_base import KnowledgeBase
-from ark_nav.core.utils.nav_logger import get_logger
+from ark_nav.core.utils.nav_logger import get_logger, set_trace_id
 
 logger = get_logger(__name__)
 
@@ -28,6 +30,9 @@ logger = get_logger(__name__)
 _HEARTBEAT_INTERVAL_S = 3600  # 每小时
 # 心跳的最小剩余时间阈值：剩余等待时间小于该值不打心跳（避免触发前 1 秒还来一条）
 _HEARTBEAT_MIN_REMAINING_S = 60
+# 副本错峰窗口（秒）：定时器触发时再随机延迟 0~该值，把所有副本的 reload 散列到一个窗口内
+# 避免 N 个副本同时挤少数 GPU 副本导致排队长尾
+_JITTER_WINDOW_S = 600  # 10 分钟
 
 
 def _parse_hhmm(value: str) -> tuple[int, int]:
@@ -157,8 +162,32 @@ class KnowledgeBaseSyncScheduler:
                 )
 
     async def _do_reload(self, *, planned_at: Optional[datetime]) -> None:
-        """触发一次 reload，包含完整生命周期日志"""
+        """触发一次 reload，包含完整生命周期日志。
+
+        - 每次 reload 生成独立 trace_id，避免继承"触发懒启动的请求"的 trace
+          （否则 scheduler 后台任务的日志会永远挂在第一个请求的 trace 上）
+        - 定时触发时引入随机抖动 0~_JITTER_WINDOW_S 秒，把多副本的 reload 散到一个窗口内
+          手动触发（trigger_now，planned_at=None）跳过抖动，立即执行
+        """
+        # 为本次 reload 分配独立 trace_id；后续 logger 和 remote_with_trace 都会带上它
+        reload_trace_id = f"kb-reload-{uuid.uuid4().hex[:12]}"
+        set_trace_id(reload_trace_id)
+
         planned_str = planned_at.isoformat(timespec='seconds') if planned_at else "manual"
+
+        # 定时触发的错峰抖动（手动触发不抖）
+        if planned_at is not None and _JITTER_WINDOW_S > 0:
+            jitter_s = random.uniform(0, _JITTER_WINDOW_S)
+            logger.info(
+                f"scheduler.jitter {self._tag()} "
+                f"planned_at={planned_str} jitter_seconds={jitter_s:.1f}"
+            )
+            try:
+                await asyncio.sleep(jitter_s)
+            except asyncio.CancelledError:
+                logger.info(f"scheduler.cancelled_during_jitter {self._tag()}")
+                return
+
         logger.info(f"scheduler.triggered {self._tag()} planned_at={planned_str}")
 
         start_ts = datetime.now()

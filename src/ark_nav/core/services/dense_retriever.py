@@ -1,10 +1,20 @@
+import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 
 import faiss
+import numpy as np
 
 from ark_nav.core.utils.nav_logger import get_logger, remote_with_trace
 
 logger = get_logger(__name__)
+
+
+def _build_faiss_index_sync(embeddings: np.ndarray) -> faiss.Index:
+    """同步构建 FAISS 索引。被 asyncio.to_thread 调起，跑在工作线程而非 event loop 上。"""
+    arr = embeddings.astype("float32")
+    index = faiss.IndexFlatIP(arr.shape[1])
+    index.add(arr)
+    return index
 
 
 class DenseRetriever:
@@ -16,7 +26,13 @@ class DenseRetriever:
         self.chains: List[Dict[str, Any]] = []
 
     async def build_index(self, chains: List[Dict[str, Any]]):
-        """构建向量索引（双缓冲：在临时变量里建好后一次性原子替换，避免热更新时短暂查空索引）"""
+        """构建向量索引（双缓冲：在临时变量里建好后一次性原子替换，避免热更新时短暂查空索引）
+
+        说明：
+        - embedding 计算走 Ray remote handle，本身是 await
+        - faiss.IndexFlatIP / .add 是同步 CPU 操作，会阻塞 event loop 1-2 秒；
+          这里用 asyncio.to_thread 丢到工作线程，让 event loop 期间仍能处理业务请求
+        """
         texts = [c.get("text", "") for c in chains]
 
         logger.info("构建Dense索引...")
@@ -27,8 +43,7 @@ class DenseRetriever:
             show_progress_bar=True,
             normalize_embeddings=True,
         )
-        new_dense_index = faiss.IndexFlatIP(embeddings.shape[1])
-        new_dense_index.add(embeddings.astype("float32"))
+        new_dense_index = await asyncio.to_thread(_build_faiss_index_sync, embeddings)
 
         # 一次性原子替换两个字段（Python 引用赋值是 GIL 保护下的原子操作）
         self.chains = chains
