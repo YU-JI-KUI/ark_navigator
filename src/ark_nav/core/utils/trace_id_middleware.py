@@ -14,7 +14,7 @@ from ark_nav.core.utils.nav_logger import get_logger, set_trace_id
 logger = get_logger(__name__)
 
 _MAX_BODY_LOG_BYTES = 8 * 1024  # 单个请求/响应 body 最多打印 8KB，超出截断
-_TRACE_HEADER = "X-Request-ID"
+_TRACE_HEADER = "X-Trace-Id"
 
 # 静默路径：基础设施探活 / 文档静态资源，不打日志、不读 body、不解析 response
 # trace_id 仍然设置并写入响应头，业务逻辑该跑跑
@@ -55,9 +55,9 @@ def _format_body(raw: bytes) -> Any:
 class TraceIDMiddleware(BaseHTTPMiddleware):
     """统一处理 trace_id 与请求日志。
 
-    - 从 `X-Request-ID` 取 trace_id；缺失则自动生成
+    - 从 `X-Trace-Id` 取 trace_id；缺失则自动生成
     - 设置到 ContextVar，整条异步链路自动携带
-    - 在响应头回写 trace_id
+    - 在响应头回写 `X-Trace-Id`
     - 自动打印 request_in / request_out 日志，含 path / payload / status / cost / response
     """
 
