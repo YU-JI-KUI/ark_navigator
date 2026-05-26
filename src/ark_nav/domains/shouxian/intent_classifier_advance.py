@@ -13,7 +13,7 @@ from typing import List, Optional
 from enum import Enum
 
 from ark_nav.domains.shouxian.intent_classifier_simple import classify_user_intent
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api
+from ark_nav.core.services.llm_platform_client import call_bigmodel_api
 from ark_nav.core.utils.nav_logger import get_logger
 from ark_nav.domains.shouxian.router_schemas import IntentResult, Message
 

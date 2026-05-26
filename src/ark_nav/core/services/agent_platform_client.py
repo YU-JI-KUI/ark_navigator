@@ -1,124 +1,94 @@
-import asyncio
+"""智能体平台（Agent Platform）API 客户端。
+
+负责所有与"智能体平台"相关的 HTTP 调用：
+- 鉴权（auth token）
+- RAG 检索（search_kb / fetch_rag）
+- FAQ 知识库分页拉取（_get_faq_page_data）
+- Table 知识库拉取（_get_faq_table_data）
+- Prompt 模板查询（_get_prompt_by_name / init_prompt_from_agent_rag）
+
+注意：和平安大模型平台（call_bigmodel_api）是完全独立的两个外部系统，
+此模块不应该出现任何大模型 API 相关代码。
+"""
+from __future__ import annotations
+
 import json
 import os
-import time
-import httpx
-import uuid
-from typing import List, Optional, Dict, Any
-from dotenv import load_dotenv
+from typing import Any, Dict, List, Optional
 
-load_dotenv()
-from ark_nav.core.services.gpt_signature import generate_app_sign
-from ark_nav.core.services.open_ai_signature import get_sign
-from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
-from ark_nav.core.utils.llm_platform_config import LLMPlfConfig
+import httpx
+
 from ark_nav.core.utils.agent_platform_config import AgentPfmConfig
 from ark_nav.core.utils.http_client_manager import get_client
+from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 
-logger = get_logger("ark_nav")
+logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# URL 构造
+# ---------------------------------------------------------------------------
+
+
+async def _get_kb_url() -> str:
+    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_QUERY_URL}"
+
+
+async def _get_faq_page_url() -> str:
+    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_PAGE_URL}"
+
+
+async def _get_faq_page_similar_url() -> str:
+    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_PAGE_SIMILAR_URL}"
+
+
+async def _get_faq_table_detail_url() -> str:
+    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_TABLE_DETAIL_URL}"
+
+
+async def _get_faq_table_list_url() -> str:
+    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_TABLE_LIST_URL}"
+
+
+# ---------------------------------------------------------------------------
+# 鉴权
+# ---------------------------------------------------------------------------
 
 
 @print_execution_time
-async def call_bigmodel_api(
-        query: str | list,
-        scene_id: str,
-        app_key: str,
-        app_secret: str,
-        timeout: int = 6,
-        max_retries: int = 3,
-        **kwargs
-) -> Optional[Dict[Any, Any]]:
-    """
-    调用 Qwen3 服务接口，发送 prompt 请求。
-
-    :param url: API 接口地址
-    :param prompt: 输入提示文本
-    :param scene_id: 业务场景 ID（如 'customer_service', 'product_query' 等）
-    :param app_key: 应用密钥
-    :param app_secret: 应用密钥密钥（用于签名）
-    :param timeout: 请求超时时间（秒）
-    :param max_retries: 最大重试次数
-    :return: API 响应 JSON，失败返回 None
-    """
-
-    request_timestamp = str(int(time.time() * 1000))
-    open_ai_signature = get_sign(LLMPlfConfig.RSA_PK, request_timestamp)
-    gpt_signature = generate_app_sign(app_key, app_secret, request_timestamp)
+async def _get_agent_auth_token(client: httpx.AsyncClient) -> str | None:
+    auth_url = f"{AgentPfmConfig.HOST}{AgentPfmConfig.TOKEN_URL}"
 
     headers = {
         "Content-Type": "application/json; charset=utf-8",
         "Accept": "application/json",
-        "openApiCode": LLMPlfConfig.OPEN_API_CODE,
-        "openApiCredential": LLMPlfConfig.CRE_ID,
-        "openApiRequestTime": request_timestamp,
-        "openApiSignature": open_ai_signature,
-        "gpt_app_key": app_key,
-        "gpt_signature": gpt_signature
     }
-    request_id = str(uuid.uuid4())
-    if isinstance(query, list):
-        messages = query
-    else:
-        messages = [
-            {
-                "role": "user",
-                "content": query
-            }
-        ]
+
     payload = {
-        "request_id": request_id,
-        "messages": messages,
-        "stream": False,
-        "scene_id": scene_id,
-        "seed": 42,
-        "temperature": 0.0,
-        "chat_template_kwargs": {"enable_thinking": False},
-        **kwargs
+        "appId": AgentPfmConfig.TENANT_ID,
+        "appSecret": AgentPfmConfig.APP_SEC,
     }
-    logger.info(f"Calling large model with {request_id}, scene_id-{scene_id}")
-    for attempt in range(max_retries):
-        try:
-            try:
-                response = await get_client().post(url=LLMPlfConfig.OPEN_AI_URL, headers=headers, json=payload,
-                                                   timeout=timeout)
-                logger.info(f"{request_id} 返回的response:{response.json()}")
-                response.raise_for_status()
-                return response.json()
-            except Exception as e:
-                logger.error(f"API call failed: {e}")
-                if attempt < max_retries - 1:
-                    continue
-                else:
-                    return {"error": str(e)}
 
-        except httpx.RequestError as e:
-            logger.error(f"[WARNING] Request attempt {attempt + 1} failed: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(1 * (2 ** attempt))  # 指数退避
-            else:
-                return None
-
+    logger.info("Calling agent platform to get auth token")
+    try:
+        logger.info(f"token_url:{auth_url}")
+        response = await get_client().post(url=auth_url, headers=headers, json=payload, timeout=30)
+        logger.info("succeed to get the auth token from agent platform")
+        response.raise_for_status()
+        response_json = response.json()
+        if response_json.get("msg") == "success":
+            return response_json.get("data")
+        raise Exception(f"API call failed: {response_json.get('msg')}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON: {response}, error: {e}")
+    except Exception as e:
+        logger.error(f"API call failed: {e}", exc_info=True)
     return None
 
 
-@print_execution_time
-async def init_prompt_from_agent_rag():
-    """
-    调用智能体画布平台，查询提示词。
-    """
-    logger.info("start loading ARK prompts")
-    xiezhi_prompt = await _get_prompt_by_name("服务意图识别")
-    baize_prompt = await _get_prompt_by_name("白泽意图重写")
-    ylx_prompt = await _get_prompt_by_name("养老险意图识别")
-    if xiezhi_prompt:
-        os.environ["XIEZHI_PROMPT"] = xiezhi_prompt
-        logger.info("load prompt for (服务意图识别) successfully!")
-    if baize_prompt:
-        os.environ["BAIZE_PROMPT"] = baize_prompt
-        logger.info("load prompt for (白泽意图重写) successfully!")
-    if ylx_prompt:
-        os.environ["YLX_PROMPT"] = ylx_prompt
-        logger.info("load prompt for (养老险意图识别) successfully!")
+# ---------------------------------------------------------------------------
+# RAG 检索（业务在线查询用）
+# ---------------------------------------------------------------------------
 
 
 async def _assemble_req_payload(
@@ -129,27 +99,12 @@ async def _assemble_req_payload(
         kb_type: List[str],
         auth_token: str,
         tenant_id: str = "wfcz-yjdd",
-        labels: List[str] = None
+        labels: List[str] = None,
 ) -> tuple[Dict[str, str], Dict[str, Any]]:
-    """
-    组装请求头和请求体。
-
-    Args:
-        query: 用户输入问题
-        score_threshold: 相似度阈值
-        top_n: 返回前 N 个结果
-        kb_ids: 知识库 ID 列表
-        kb_type: 知识库类型（如 faq）
-        auth_token: 认证 token
-        tenant_id: 租户 ID
-
-    Returns:
-        headers, payload: 请求头和请求体
-    """
     headers = {
         "Content-Type": "application/json; charset=utf-8",
         "Accept": "application/json",
-        "auth-token": auth_token
+        "auth-token": auth_token,
     }
     payload = {
         "tenantId": tenant_id,
@@ -159,56 +114,20 @@ async def _assemble_req_payload(
             "knIds": kb_ids,
             "dataTypeList": kb_type,
             "topN": top_n,
-            "queryRewrite": 0
-        }
+            "queryRewrite": 0,
+        },
     }
     if labels and len(labels) > 0:
-        # pass
         payload['context']['property'] = {
             "fileds": [
                 {
                     "name": "labels",
                     "value": labels,
-                    "condition": "contains"
+                    "condition": "contains",
                 }
             ]
         }
     return headers, payload
-
-
-async def _get_kb_url() -> str:
-    """
-    构建 KB 服务的完整 URL。
-    """
-    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_QUERY_URL}"
-
-
-async def _get_faq_page_url() -> str:
-    """
-    构建 FAQ PAGE 服务的完整 URL。
-    """
-    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_PAGE_URL}"
-
-
-async def _get_faq_page_similar_url() -> str:
-    """
-    构建 FAQ PAGE SIMILAR 服务的完整 URL。
-    """
-    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_PAGE_SIMILAR_URL}"
-
-
-async def _get_faq_table_detail_url() -> str:
-    """
-    构建 FAQ TABLE DETAIL 服务的完整 URL。
-    """
-    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_TABLE_DETAIL_URL}"
-
-
-async def _get_faq_table_list_url() -> str:
-    """
-    构建 FAQ TABLE LIST 服务的完整 URL。
-    """
-    return f"{AgentPfmConfig.HOST}{AgentPfmConfig.RAG_FAQ_TABLE_LIST_URL}"
 
 
 async def search_kb(
@@ -218,23 +137,9 @@ async def search_kb(
         tenant_id: str = "wfcz-yjdd",
         score_threshold: float = 0.8,
         top_n: int = 1,
-        labels: List[str] = None
+        labels: List[str] = None,
 ) -> List[Dict[str, Any]]:
-    """
-    调用 KB 服务，获取知识库匹配结果。
-
-    Args:
-        query: 用户输入问题
-        kb_type: 知识库类型（如 faq）
-        kb_ids: 知识库 ID 列表
-        tenant_id: 租户 ID（默认 wfcz-yjdd）
-        score_threshold: 相似度阈值（默认 0.85）
-        top_n: 返回结果数量（默认 3）
-        labels: 知识库标签列表
-
-    Returns:
-        响应 JSON 或错误信息
-    """
+    """调用智能体平台 RAG 检索接口，返回匹配的知识结果。"""
     try:
         rag_url = await _get_kb_url()
 
@@ -251,17 +156,16 @@ async def search_kb(
             kb_type=kb_type,
             auth_token=auth_token,
             tenant_id=tenant_id,
-            labels=labels
+            labels=labels,
         )
         logger.info(f"payload={payload}")
         response = await get_client().post(
             url=rag_url,
             headers=headers,
             json=payload,
-            timeout=30.0
+            timeout=30.0,
         )
 
-        # 检查状态码
         if response.status_code >= 400:
             logger.error(f"KB 服务返回错误: {response.status_code} - {response.text}")
             return [{"error": f"KB 服务错误: {response.status_code}", "details": response.text}]
@@ -269,8 +173,7 @@ async def search_kb(
         try:
             response_json = response.json()
             logger.info(f"raw response:{response_json}")
-            response = extract_answer(response_json)
-            return response
+            return extract_answer(response_json)
         except Exception as e:
             logger.error(f"解析响应失败: {e}, 原始内容: {response.text}")
             return [{"error": "响应格式错误", "raw": response.text}]
@@ -282,7 +185,6 @@ async def search_kb(
 
 def extract_answer(response_json: dict) -> List[Dict]:
     data = response_json.get("data")
-    # 检查 code 是否为 200
     if response_json.get("code") != "200":
         logger.error(f"fail to fetch result from kb, resp:{response_json}")
         return []
@@ -290,33 +192,53 @@ def extract_answer(response_json: dict) -> List[Dict]:
     if not isinstance(data, list) or len(data) == 0:
         return []
 
-    # 3. 获取第一个元素，必须是 dict
     results = []
     for d in data:
         seg_content_str = d.get("segContent")
         data_type = d.get("dataType")
         seg = json.loads(seg_content_str)
         if data_type == "faq":
-            results.append({
-                "answer": seg.get("answer"),
-                "score": d.get("score")
-            })
+            results.append({"answer": seg.get("answer"), "score": d.get("score")})
         elif data_type == "table":
-            results.append({
-                "answer": seg,
-                "score": d.get("score")
-            })
+            results.append({"answer": seg, "score": d.get("score")})
     return results
 
 
+async def fetch_rag(
+    query: str,
+    kb_type: List[str],
+    kb_ids: List[str] = None,
+    labels: List[str] = None,
+    score_threshold: float = 0.9,
+) -> str | Dict | None:
+    """上层 RAG 查询包装：默认用 AgentPfmConfig.KG_ID。"""
+    logger.info(f"fetch rag from KB,query={query}")
+    answers = await search_kb(
+        query=query,
+        kb_type=kb_type,
+        kb_ids=[AgentPfmConfig.KG_ID] if kb_ids is None else kb_ids,
+        labels=labels,
+        score_threshold=score_threshold,
+    )
+    logger.info(f"fetch rag from KB,result={answers}")
+    if answers is not None and len(answers) > 0:
+        return answers[0].get("answer")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Prompt 模板加载（启动时调用）
+# ---------------------------------------------------------------------------
+
+
 async def _get_prompt_by_name(prompt_name: str) -> str | None:
-    logger.info(f"Calling agent model to get prompt templete")
+    logger.info("Calling agent platform to get prompt template")
     try:
         agent_platform_kg_id = AgentPfmConfig.KG_ID
         answers = await search_kb(
             query=prompt_name,
             kb_type=["faq"],
-            kb_ids=[agent_platform_kg_id]
+            kb_ids=[agent_platform_kg_id],
         )
         if answers is not None and len(answers) > 0:
             return answers[0].get("answer")
@@ -328,48 +250,41 @@ async def _get_prompt_by_name(prompt_name: str) -> str | None:
 
 
 @print_execution_time
-async def _get_agent_auth_token(client: httpx.AsyncClient) -> str | None:
-    auth_url = f"{AgentPfmConfig.HOST}{AgentPfmConfig.TOKEN_URL}"
+async def init_prompt_from_agent_rag():
+    """从智能体平台拉取 prompt 模板，写入 os.environ 供业务读取。"""
+    logger.info("start loading ARK prompts")
+    xiezhi_prompt = await _get_prompt_by_name("服务意图识别")
+    baize_prompt = await _get_prompt_by_name("白泽意图重写")
+    ylx_prompt = await _get_prompt_by_name("养老险意图识别")
+    if xiezhi_prompt:
+        os.environ["XIEZHI_PROMPT"] = xiezhi_prompt
+        logger.info("load prompt for (服务意图识别) successfully!")
+    if baize_prompt:
+        os.environ["BAIZE_PROMPT"] = baize_prompt
+        logger.info("load prompt for (白泽意图重写) successfully!")
+    if ylx_prompt:
+        os.environ["YLX_PROMPT"] = ylx_prompt
+        logger.info("load prompt for (养老险意图识别) successfully!")
 
-    headers = {
-        "Content-Type": "application/json; charset=utf-8",
-        "Accept": "application/json",
-    }
 
-    payload = {
-        "appId": AgentPfmConfig.TENANT_ID,
-        "appSecret": AgentPfmConfig.APP_SEC
-    }
-
-    logger.info(f"Calling agent model to get the auth token")
-    try:
-        logger.info(f"token_url:{auth_url}")
-        response = await get_client().post(url=auth_url, headers=headers, json=payload, timeout=30)
-        logger.info(f"succeed to get the auth token from agent platfrom")
-        response.raise_for_status()
-        response_json = response.json()
-        if response_json.get("msg") == "success":
-            return response_json.get("data")
-        else:
-            raise Exception(f"API call failed: {response_json.get('msg')}")
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON: {response}, error: {e}")
-    except Exception as e:
-        logger.error(f"API call failed: {e}", exc_info=True)
-    return None
+# ---------------------------------------------------------------------------
+# FAQ 知识库分页拉取（建索引用）
+# ---------------------------------------------------------------------------
 
 
 @print_execution_time
 async def _get_faq_page_data(
     kb_id: str,
-    labels: Optional[List[str]] = None,
+    category_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """拉取 FAQ 知识库数据。
+    """拉取 FAQ 知识库数据，支持按 categoryId 过滤。
 
     Args:
-        kb_id: 知识库 ID
-        labels: 可选标签过滤。传入则只拉取带有这些标签的 FAQ，用于增量同步；
-                None 或空列表表示拉取所有 FAQ（全量同步）
+        kb_id: 知识库 ID（远程平台 knId）
+        category_id: 目录 ID。传入则只拉该目录下的 FAQ（用于增量同步）；
+                     None 表示拉取所有目录（全量同步）
+
+    返回字典中**始终带 categoryId 字段**，用于本地按目录精准匹配/删除。
     """
     try:
         faq_page_url = await _get_faq_page_url()
@@ -383,7 +298,7 @@ async def _get_faq_page_data(
             "Content-Type": "application/json; charset=utf-8",
             "Accept": "application/json",
             "Connection": "keep-alive",
-            "auth-token": auth_token
+            "auth-token": auth_token,
         }
 
         payload_template = {
@@ -391,12 +306,12 @@ async def _get_faq_page_data(
             'userName': 'super-agent',
             'knId': kb_id,
             'pageSize': 500,
-            'currentPage': 1
+            'currentPage': 1,
         }
-        # 增量同步：远程支持按 kbLabels 过滤
-        if labels:
-            payload_template['kbLabels'] = list(labels)
-            logger.info(f"_get_faq_page_data partial mode kb_id={kb_id} labels={labels}")
+        # 增量同步：智能体平台 FAQ 接口支持按 categoryId 过滤
+        if category_id:
+            payload_template['categoryId'] = str(category_id)
+            logger.info(f"_get_faq_page_data partial mode kb_id={kb_id} category_id={category_id}")
         payload = payload_template.copy()
         payload['currentPage'] = 1
 
@@ -437,14 +352,17 @@ async def _get_faq_page_data(
                             'userName': 'super-agent',
                             'standardQid': standard_qid,
                             'pageSize': 500,
-                            'currentPage': 1
+                            'currentPage': 1,
                         }
-                        response_similar = await get_client().post(url=faq_page_similar_url, headers=headers,
-                                                                   json=payload_similar, timeout=30)
+                        response_similar = await get_client().post(
+                            url=faq_page_similar_url, headers=headers,
+                            json=payload_similar, timeout=30,
+                        )
 
                         if response_similar.status_code != 200:
                             logger.error(
-                                f"获取标问{standard_question}的相似问请求失败，状态码: {response_similar.status_code}")
+                                f"获取标问{standard_question}的相似问请求失败，状态码: {response_similar.status_code}"
+                            )
                             stop_outer_loop = True
                             break
                         data_similar = response_similar.json()
@@ -453,20 +371,19 @@ async def _get_faq_page_data(
                     else:
                         similar_questions = [sq.get("similarQuestion", "") for sq in similar_question_list]
 
-                    # 提取答案
                     answer = record.get("faqAnswer", {}).get("content", "")
-                    # 提取分类
                     category_name = record.get("categoryName", "")
-                    # 将标准问题和相似问题合并为多个问答对
+                    record_category_id = str(record.get("categoryId", "") or "")
                     if status == "1":
                         for question in [standard_question] + similar_questions:
                             all_faq_data.append({
                                 "text": question,
                                 "answer": answer,
                                 "categoryName": category_name,
+                                "categoryId": record_category_id,
                                 "status": status,
                                 "kbType": "faq",
-                                "kbLabel": "#".join(labels)
+                                "kbLabel": "#".join(labels),
                             })
 
             unique_data = [dict(t) for t in set(tuple(d.items()) for d in all_faq_data)]
@@ -476,6 +393,11 @@ async def _get_faq_page_data(
     except Exception as e:
         logger.error(f"API call failed: {e}", exc_info=True)
     return []
+
+
+# ---------------------------------------------------------------------------
+# Table 知识库拉取（建索引用）
+# ---------------------------------------------------------------------------
 
 
 @print_execution_time
@@ -492,7 +414,7 @@ async def _get_faq_table_data(kb_id: str) -> List[Dict[str, Any]]:
             "Content-Type": "application/json; charset=utf-8",
             "Accept": "application/json",
             "Connection": "keep-alive",
-            "auth-token": auth_token
+            "auth-token": auth_token,
         }
 
         payload_template = {
@@ -500,14 +422,15 @@ async def _get_faq_table_data(kb_id: str) -> List[Dict[str, Any]]:
             'userName': 'super-agent',
             'knId': kb_id,
             'pageSize': 500,
-            'currentPage': 1
+            'currentPage': 1,
         }
 
         payload = payload_template.copy()
         payload['currentPage'] = 1
 
-        response_table_list = await get_client().post(url=faq_table_list_url, headers=headers, json=payload_template,
-                                                      timeout=30)
+        response_table_list = await get_client().post(
+            url=faq_table_list_url, headers=headers, json=payload_template, timeout=30,
+        )
 
         if response_table_list.status_code != 200:
             logger.error(f"FAQ PAGE 服务错误: {response_table_list.status_code} - {response_table_list.text}")
@@ -518,13 +441,17 @@ async def _get_faq_table_data(kb_id: str) -> List[Dict[str, Any]]:
             faq_table_data = []
             response_json = response_table_list.json()
             table_list = response_json.get("data", {}).get("records", [])
-            table_ids = [(str(t.get("id", "")), "#".join(label.get("name", "") for label in t.get("knLabelList", []))) for t in table_list if str(t.get("enable", "")) == "1"]
+            table_ids = [
+                (str(t.get("id", "")), "#".join(label.get("name", "") for label in t.get("knLabelList", [])))
+                for t in table_list if str(t.get("enable", "")) == "1"
+            ]
             for table_id, labels in table_ids:
                 if stop_outer_loop:
                     break
                 payload['tableId'] = table_id
-                response_table_detail = await get_client().post(url=faq_table_detail_url, headers=headers, json=payload,
-                                                                timeout=30)
+                response_table_detail = await get_client().post(
+                    url=faq_table_detail_url, headers=headers, json=payload, timeout=30,
+                )
 
                 if response_table_detail.status_code != 200:
                     logger.error(f"获取表格{table_id}的请求失败，状态码: {response_table_detail.status_code}")
@@ -536,8 +463,9 @@ async def _get_faq_table_data(kb_id: str) -> List[Dict[str, Any]]:
                 for page in range(1, pages + 1):
                     logger.info(f"正在获取第 {page} 页数据...")
                     payload['currentPage'] = page
-                    response = await get_client().post(url=faq_table_detail_url, headers=headers, json=payload,
-                                                       timeout=30)
+                    response = await get_client().post(
+                        url=faq_table_detail_url, headers=headers, json=payload, timeout=30,
+                    )
 
                     if response.status_code != 200:
                         logger.error(f"第 {page} 页请求失败，状态码: {response.status_code}")
@@ -563,27 +491,11 @@ async def _get_faq_table_data(kb_id: str) -> List[Dict[str, Any]]:
     return []
 
 
-async def fetch_rag(query: str, kb_type: List[str], kb_ids: List[str] = None, labels: List[str] = None,
-                    score_threshold: float = 0.9) -> str | Dict | None:
-    logger.info(f"fetch rag from KB,query={query}")
-    answers = await search_kb(
-        query=query,
-        kb_type=kb_type,
-        kb_ids=[AgentPfmConfig.KG_ID] if kb_ids is None else kb_ids,
-        labels=labels,
-        score_threshold=score_threshold
-    )
-    logger.info(f"fetch rag from KB,result={answers}")
-    if answers is not None and len(answers) > 0:
-        return answers[0].get("answer")
-    return None
-
-
 def main():
     import asyncio
     result = asyncio.run(_get_faq_table_data(AgentPfmConfig.KG_ID))
     logger.info(f"=========={len(result)}==========")
-    for item in result[:5]:  # 仅展示前5条作为示例
+    for item in result[:5]:
         print(item)
 
 

@@ -2,7 +2,7 @@
 
 设计目标：
 1. 业务代码只调 KnowledgeBase 接口，不感知本地 FAISS / 远程 REST 的差异
-2. 模式切换由 settings.kb_mode 决定，业务运行时不再读环境变量
+2. 模式切换由 KBConfig.MODE 决定，业务运行时不再读环境变量
 3. 返回值契约统一：FAQ -> Optional[str]，Table -> Optional[Dict]
 """
 from __future__ import annotations
@@ -11,9 +11,9 @@ import asyncio
 import copy
 from typing import Any, Dict, List, Optional, Protocol
 
-from ark_nav.config import KnowledgeBaseMode, settings
 from ark_nav.core.services.faiss_index_store import FaissIndexStore
-from ark_nav.core.services.xiezhi_http import fetch_rag
+from ark_nav.core.services.agent_platform_client import fetch_rag
+from ark_nav.core.utils.kb_config import KBConfig
 from ark_nav.core.utils.nav_logger import get_logger
 
 logger = get_logger(__name__)
@@ -45,14 +45,14 @@ class KnowledgeBase(Protocol):
         """检索 Table 类知识（结构化记录），未命中返回 None"""
         ...
 
-    async def reload(self, faq_labels: Optional[List[str]] = None) -> None:
+    async def reload(self, faq_category_id: Optional[str] = None) -> None:
         """刷新底层索引。
 
         Args:
-            faq_labels:
-              - None: 全量同步——重新拉取所有 FAQ + 所有 Table 并整体替换索引
-              - 非空列表（如 ["hotfix"]）：增量同步——只拉取指定标签的 FAQ，
-                替换本地这些标签的 FAQ 条目，其他 FAQ 和所有 Table 保持不变
+            faq_category_id:
+              - None / 空字符串: 全量同步——重新拉取所有 FAQ + 所有 Table 并整体替换索引
+              - 非空字符串（如 "12345"）：增量同步——只拉取该目录下的 FAQ，
+                替换本地这个目录的 FAQ 条目；其他目录的 FAQ 和所有 Table 保持不变
 
         远程实现可为 no-op。
         """
@@ -104,10 +104,10 @@ class LocalFaissKnowledgeBase:
         record["sub_category_i"] = record.get("text")
         return record
 
-    async def reload(self, faq_labels: Optional[List[str]] = None) -> None:
-        mode = "full" if not faq_labels else f"partial(faq_labels={faq_labels})"
+    async def reload(self, faq_category_id: Optional[str] = None) -> None:
+        mode = "full" if not faq_category_id else f"partial(category_id={faq_category_id})"
         logger.info(f"LocalFaissKnowledgeBase[{self.domain}] reload start kg_id={self.kg_id} mode={mode}")
-        await self._inner.load_data(kg_id=self.kg_id, faq_labels=faq_labels)
+        await self._inner.load_data(kg_id=self.kg_id, faq_category_id=faq_category_id)
         logger.info(f"LocalFaissKnowledgeBase[{self.domain}] reload done mode={mode}")
 
 
@@ -150,7 +150,7 @@ class RemoteRestKnowledgeBase:
         )
         return result if isinstance(result, dict) else None
 
-    async def reload(self, faq_labels: Optional[List[str]] = None) -> None:
+    async def reload(self, faq_category_id: Optional[str] = None) -> None:
         # 远程模式无本地索引可刷新；参数仅为接口兼容
         return None
 
@@ -160,14 +160,14 @@ def build_knowledge_base(
     domain: str,
     kg_id: Optional[str],
 ) -> KnowledgeBase:
-    """根据 settings.kb_mode 构造对应实现。
+    """根据 KBConfig.MODE 构造对应实现。
 
     Args:
         embedding_model_handle: Ray EmbeddingModelDeployment handle；仅 LOCAL 模式使用，REMOTE 模式可传 None
         domain: 业务域名，用于隔离索引目录与日志标记
         kg_id: 智能体平台知识库 ID；LOCAL 模式必填
     """
-    if settings.kb_mode == KnowledgeBaseMode.LOCAL:
+    if KBConfig.is_local_mode():
         if embedding_model_handle is None:
             raise ValueError(f"LOCAL 模式下 build_knowledge_base[{domain}] 需要 embedding_model_handle")
         logger.info(f"build_knowledge_base domain={domain} mode=local")

@@ -1,8 +1,8 @@
 """知识库同步调度器（进程内 asyncio 双循环）
 
 为每个 Ray Deployment 副本提供两套同步策略：
-- 全量循环：每天 21:30 ± 抖动；reload(faq_labels=None)
-- 增量循环：每 N 分钟 ± 抖动；reload(faq_labels=["hotfix"])
+- 全量循环：每天 21:30 ± 抖动；reload(faq_category_id=None)
+- 增量循环：每 N 分钟 ± 抖动；reload(faq_category_id="<id>")
 
 设计要点：
 - 双循环互斥：用 asyncio.Lock 保证全量和增量不会同时跑（避免 dense_index 竞争）
@@ -18,10 +18,10 @@ import os
 import random
 import uuid
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Optional
 
-from ark_nav.config import settings
 from ark_nav.core.services.knowledge_base import KnowledgeBase
+from ark_nav.core.utils.kb_config import KBConfig
 from ark_nav.core.utils.nav_logger import get_logger, set_trace_id
 
 logger = get_logger(__name__)
@@ -80,14 +80,19 @@ class KnowledgeBaseSyncScheduler:
         knowledge_base: KnowledgeBase,
         full_sync_time: Optional[str] = None,
         partial_interval_minutes: Optional[int] = None,
-        partial_faq_labels: Optional[List[str]] = None,
+        partial_faq_category_id: Optional[str] = None,
     ):
         self._kb = knowledge_base
-        self._full_sync_time = full_sync_time or settings.kb_full_sync_time_effective
+        self._full_sync_time = full_sync_time or KBConfig.FULL_SYNC_TIME
         self._partial_interval_s = (
-            (partial_interval_minutes or settings.kb_partial_sync_interval_minutes) * 60
+            (partial_interval_minutes or KBConfig.PARTIAL_SYNC_INTERVAL_MINUTES) * 60
         )
-        self._partial_labels = list(partial_faq_labels or settings.kb_partial_faq_labels_list)
+        # 单值；空串/None 表示不启用增量
+        self._partial_category_id = (
+            partial_faq_category_id
+            if partial_faq_category_id is not None
+            else KBConfig.partial_category_id()
+        ) or ""
 
         # 防止全量和增量同时跑（dense_index 竞争）
         self._reload_lock = asyncio.Lock()
@@ -125,9 +130,9 @@ class KnowledgeBaseSyncScheduler:
             logger.exception(f"scheduler.start_async failed (bad full_sync_time) {self._tag()}")
             return
 
-        if not self._partial_labels:
+        if not self._partial_category_id:
             logger.warning(
-                f"scheduler.start_async partial labels 为空，增量同步将被跳过 {self._tag()}"
+                f"scheduler.start_async partial_category_id 为空，增量同步将被跳过 {self._tag()}"
             )
 
         next_full_at = _compute_next_run(hour, minute)
@@ -139,7 +144,7 @@ class KnowledgeBaseSyncScheduler:
             f"full_sync_time={hour:02d}:{minute:02d} "
             f"next_full_at={next_full_at.isoformat(timespec='seconds')} "
             f"partial_interval_minutes={self._partial_interval_s // 60} "
-            f"partial_labels={self._partial_labels}"
+            f"partial_category_id={self._partial_category_id or '(disabled)'}"
         )
 
     def stop(self) -> None:
@@ -150,16 +155,17 @@ class KnowledgeBaseSyncScheduler:
             setattr(self, task_attr, None)
         logger.info(f"scheduler.stopped {self._tag()}")
 
-    async def trigger_now(self, faq_labels: Optional[List[str]] = None) -> None:
+    async def trigger_now(self, faq_category_id: Optional[str] = None) -> None:
         """手动触发一次 reload。供运维或调试使用。
 
         Args:
-            faq_labels: None 触发全量；非空触发增量
+            faq_category_id: None / 空字符串触发全量；非空字符串触发增量
         """
-        full = not faq_labels
-        logger.info(f"scheduler.manual_trigger {self._tag()} full={full} labels={faq_labels}")
+        cid = faq_category_id or None
+        full = cid is None
+        logger.info(f"scheduler.manual_trigger {self._tag()} full={full} category_id={cid}")
         async with self._reload_lock:
-            await self._do_reload(full=full, planned_at=None, labels=faq_labels)
+            await self._do_reload(full=full, planned_at=None, category_id=cid)
 
     # ------------------------------------------------------------
     # 全量循环
@@ -186,15 +192,15 @@ class KnowledgeBaseSyncScheduler:
                     return
 
             async with self._reload_lock:
-                await self._do_reload(full=True, planned_at=next_run_at, labels=None)
+                await self._do_reload(full=True, planned_at=next_run_at, category_id=None)
 
     # ------------------------------------------------------------
     # 增量循环
     # ------------------------------------------------------------
 
     async def _partial_loop(self) -> None:
-        if not self._partial_labels:
-            return  # 标签为空时跳过整个循环
+        if not self._partial_category_id:
+            return  # category_id 为空时跳过整个循环
 
         # 启动延迟，避免和首次全量挤一起
         try:
@@ -213,7 +219,7 @@ class KnowledgeBaseSyncScheduler:
 
             async with self._reload_lock:
                 await self._do_reload(
-                    full=False, planned_at=datetime.now(), labels=self._partial_labels
+                    full=False, planned_at=datetime.now(), category_id=self._partial_category_id
                 )
 
     # ------------------------------------------------------------
@@ -242,7 +248,7 @@ class KnowledgeBaseSyncScheduler:
         *,
         full: bool,
         planned_at: Optional[datetime],
-        labels: Optional[List[str]],
+        category_id: Optional[str],
     ) -> None:
         """执行一次 reload，包含完整生命周期日志。
 
@@ -254,7 +260,7 @@ class KnowledgeBaseSyncScheduler:
 
         planned_str = planned_at.isoformat(timespec='seconds') if planned_at else "manual"
         logger.info(
-            f"scheduler.triggered {self._tag()} mode={mode} labels={labels} "
+            f"scheduler.triggered {self._tag()} mode={mode} category_id={category_id} "
             f"planned_at={planned_str}"
         )
 
@@ -262,7 +268,7 @@ class KnowledgeBaseSyncScheduler:
         success = False
         error_msg: Optional[str] = None
         try:
-            await self._kb.reload(faq_labels=labels)
+            await self._kb.reload(faq_category_id=category_id)
             success = True
         except Exception as e:
             error_msg = f"{type(e).__name__}: {e}"

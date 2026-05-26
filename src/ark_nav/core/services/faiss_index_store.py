@@ -4,7 +4,7 @@ load_dotenv()
 from typing import List, Dict, Any, Optional
 
 from ark_nav.core.services.dense_retriever import DenseRetriever
-from ark_nav.core.services.xiezhi_http import _get_faq_page_data, _get_faq_table_data
+from ark_nav.core.services.agent_platform_client import _get_faq_page_data, _get_faq_table_data
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 
 logger = get_logger(__name__)
@@ -19,9 +19,9 @@ class FaissIndexStore:
     3. 提供带过滤条件（kb_type / labels / score_threshold）的检索接口
 
     支持两种同步模式：
-    - 全量同步（faq_labels=None）：重新拉取所有 FAQ + Table，整体替换
-    - 增量同步（faq_labels=["hotfix"]）：只拉指定标签的 FAQ，替换本地相应条目；
-      Table 数据和其他标签的 FAQ 保持不变
+    - 全量同步（faq_category_id=None）：重新拉取所有 FAQ + Table，整体替换
+    - 增量同步（faq_category_id="12345"）：只拉指定目录的 FAQ，替换本地相应条目；
+      Table 数据和其他目录的 FAQ 保持不变
 
     索引仅在内存中维护，不落盘；进程重启后由上层 LocalFaissKnowledgeBase 重新加载。
     """
@@ -31,25 +31,25 @@ class FaissIndexStore:
         self.domain = domain
         self.is_index_updated = False
         self._initial_kg_id = kg_id
-        # 持有完整数据快照，支持增量同步时按标签局部替换
+        # 持有完整数据快照，支持增量同步时按 categoryId 局部替换
         self._all_chains: List[Dict[str, Any]] = []
         # 索引加载交由上层 LocalFaissKnowledgeBase 显式驱动
 
     @print_execution_time
-    async def load_data(self, kg_id, faq_labels: Optional[List[str]] = None):
+    async def load_data(self, kg_id, faq_category_id: Optional[str] = None):
         """从远程接口加载数据并构建向量索引。
 
         Args:
             kg_id: 知识库 ID
-            faq_labels:
-              - None: 全量同步——拉所有 FAQ + 所有 Table，整体替换 self._all_chains
-              - 非空列表：增量同步——只拉指定标签的 FAQ，替换本地相应标签的 FAQ；
-                其他 FAQ 和所有 Table 保持不变
+            faq_category_id:
+              - None / 空字符串: 全量同步——拉所有 FAQ + 所有 Table，整体替换 self._all_chains
+              - 非空字符串：增量同步——只拉该目录下的 FAQ，替换本地这个目录的 FAQ；
+                其他目录的 FAQ 和所有 Table 保持不变
         """
         if not kg_id:
             raise ValueError("知识库ID为空，请检查配置")
 
-        if not faq_labels:
+        if not faq_category_id:
             # 全量同步
             logger.info(f"FaissIndexStore[{self.domain}] 全量加载 kg_id={kg_id}")
             faq_chains = await _get_faq_page_data(kg_id)
@@ -60,14 +60,14 @@ class FaissIndexStore:
                 f"table={len(table_chains)} total={len(new_chains)}"
             )
         else:
-            # 增量同步：只拉指定标签的 FAQ
-            logger.info(f"FaissIndexStore[{self.domain}] 增量加载 kg_id={kg_id} labels={faq_labels}")
-            partial_faq = await _get_faq_page_data(kg_id, labels=faq_labels)
-            # 删本地匹配标签的 FAQ 条目，保留其他 FAQ 和所有 table
-            label_set = set(faq_labels)
+            # 增量同步：只拉指定 categoryId 的 FAQ
+            logger.info(f"FaissIndexStore[{self.domain}] 增量加载 kg_id={kg_id} category_id={faq_category_id}")
+            partial_faq = await _get_faq_page_data(kg_id, category_id=faq_category_id)
+            # 删本地匹配 categoryId 的 FAQ 条目，保留其他 FAQ 和所有 table
+            target_cid = str(faq_category_id)
             kept = [
                 c for c in self._all_chains
-                if not self._is_faq_with_any_label(c, label_set)
+                if not self._is_faq_in_category(c, target_cid)
             ]
             new_chains = kept + partial_faq
             logger.info(
@@ -79,12 +79,11 @@ class FaissIndexStore:
         await self.build_index(new_chains, is_reload=True)
 
     @staticmethod
-    def _is_faq_with_any_label(chain: Dict[str, Any], label_set: set) -> bool:
-        """判断一条 chain 是否是 FAQ 类型且带有 label_set 中任一标签"""
+    def _is_faq_in_category(chain: Dict[str, Any], target_category_id: str) -> bool:
+        """判断一条 chain 是否是 FAQ 类型且属于指定 categoryId"""
         if chain.get("kbType") != "faq":
             return False
-        chain_labels = chain.get("kbLabel", "").split("#")
-        return any(lab in label_set for lab in chain_labels)
+        return str(chain.get("categoryId", "")) == target_category_id
 
     @print_execution_time
     async def build_index(self, chains: List[Dict[str, Any]], is_reload: bool):

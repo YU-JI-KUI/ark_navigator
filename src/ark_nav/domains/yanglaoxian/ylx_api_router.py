@@ -8,7 +8,7 @@ from ark_agentic.core.stream import AgentStreamEvent, StreamEventBus
 from ark_agentic.core.stream.output_formatter import create_formatter
 import asyncio
 from ark_nav.core.utils.nav_logger import get_logger, push_to_argilla, remote_with_trace
-from ark_nav.core.services.xiezhi_http import init_prompt_from_agent_rag
+from ark_nav.core.services.agent_platform_client import init_prompt_from_agent_rag
 from ark_nav.domains.shouxian.router_schemas import IntentRequest, IntentResult
 from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest
 

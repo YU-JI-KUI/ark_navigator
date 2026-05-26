@@ -6,7 +6,7 @@ from typing import Dict, Any
 from dotenv import load_dotenv
 load_dotenv()
 from ark_nav.domains.yanglaoxian.router_schemas import OneKeyResult, XiaoAnRobotRequests, OneKeyLLMResult, KnowledgeInfo
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api
+from ark_nav.core.services.llm_platform_client import call_bigmodel_api
 from ark_nav.core.services.knowledge_base import KnowledgeBase
 from ark_nav.core.utils.http_client_manager import get_client
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time

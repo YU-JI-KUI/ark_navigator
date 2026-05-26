@@ -3,7 +3,7 @@ import time
 from ray import serve
 import traceback
 
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api
+from ark_nav.core.services.llm_platform_client import call_bigmodel_api
 from ark_nav.core.utils.nav_logger import get_logger, setup_logging, propagate_trace
 from ark_nav.domains.shouxian.router_schemas import IntentResult
 from ark_nav.core.utils.llm_platform_config import LLMPlfConfig

@@ -1,6 +1,6 @@
 import os
 
-from ark_nav.core.services.xiezhi_http import call_bigmodel_api
+from ark_nav.core.services.llm_platform_client import call_bigmodel_api
 from ark_nav.core.utils.nav_logger import get_logger
 
 logger = get_logger("ark_nav")
