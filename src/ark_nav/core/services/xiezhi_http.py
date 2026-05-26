@@ -360,7 +360,17 @@ async def _get_agent_auth_token(client: httpx.AsyncClient) -> str | None:
 
 
 @print_execution_time
-async def _get_faq_page_data(kb_id: str) -> List[Dict[str, Any]]:
+async def _get_faq_page_data(
+    kb_id: str,
+    labels: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """拉取 FAQ 知识库数据。
+
+    Args:
+        kb_id: 知识库 ID
+        labels: 可选标签过滤。传入则只拉取带有这些标签的 FAQ，用于增量同步；
+                None 或空列表表示拉取所有 FAQ（全量同步）
+    """
     try:
         faq_page_url = await _get_faq_page_url()
         faq_page_similar_url = await _get_faq_page_similar_url()
@@ -383,6 +393,10 @@ async def _get_faq_page_data(kb_id: str) -> List[Dict[str, Any]]:
             'pageSize': 500,
             'currentPage': 1
         }
+        # 增量同步：远程支持按 kbLabels 过滤
+        if labels:
+            payload_template['kbLabels'] = list(labels)
+            logger.info(f"_get_faq_page_data partial mode kb_id={kb_id} labels={labels}")
         payload = payload_template.copy()
         payload['currentPage'] = 1
 

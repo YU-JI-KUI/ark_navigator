@@ -26,6 +26,7 @@ class KnowledgeBase(Protocol):
     """
 
     domain: str
+    kg_id: Optional[str]  # 业务知识库 ID（远程平台上的 knId），便于日志区分
 
     async def fetch_faq_answer(
         self,
@@ -44,8 +45,17 @@ class KnowledgeBase(Protocol):
         """检索 Table 类知识（结构化记录），未命中返回 None"""
         ...
 
-    async def reload(self) -> None:
-        """刷新底层索引；远程实现可为 no-op"""
+    async def reload(self, faq_labels: Optional[List[str]] = None) -> None:
+        """刷新底层索引。
+
+        Args:
+            faq_labels:
+              - None: 全量同步——重新拉取所有 FAQ + 所有 Table 并整体替换索引
+              - 非空列表（如 ["hotfix"]）：增量同步——只拉取指定标签的 FAQ，
+                替换本地这些标签的 FAQ 条目，其他 FAQ 和所有 Table 保持不变
+
+        远程实现可为 no-op。
+        """
         ...
 
 
@@ -56,7 +66,7 @@ class LocalFaissKnowledgeBase:
         if not kg_id:
             raise ValueError(f"LocalFaissKnowledgeBase[{domain}] 需要 kg_id 才能从远程拉取初始数据")
         self.domain = domain
-        self._kg_id = kg_id
+        self.kg_id = kg_id   # 公开属性，便于日志和外部读取
         self._inner = FaissIndexStore(embedding_model_handle=embedding_model_handle, domain=domain, kg_id=kg_id)
 
     async def fetch_faq_answer(
@@ -94,10 +104,11 @@ class LocalFaissKnowledgeBase:
         record["sub_category_i"] = record.get("text")
         return record
 
-    async def reload(self) -> None:
-        logger.info(f"LocalFaissKnowledgeBase[{self.domain}] reload start kg_id={self._kg_id}")
-        await self._inner.load_data(kg_id=self._kg_id, is_reload=True)
-        logger.info(f"LocalFaissKnowledgeBase[{self.domain}] reload done")
+    async def reload(self, faq_labels: Optional[List[str]] = None) -> None:
+        mode = "full" if not faq_labels else f"partial(faq_labels={faq_labels})"
+        logger.info(f"LocalFaissKnowledgeBase[{self.domain}] reload start kg_id={self.kg_id} mode={mode}")
+        await self._inner.load_data(kg_id=self.kg_id, faq_labels=faq_labels)
+        logger.info(f"LocalFaissKnowledgeBase[{self.domain}] reload done mode={mode}")
 
 
 class RemoteRestKnowledgeBase:
@@ -105,7 +116,7 @@ class RemoteRestKnowledgeBase:
 
     def __init__(self, domain: str, kg_id: Optional[str] = None):
         self.domain = domain
-        self._kg_id = kg_id
+        self.kg_id = kg_id   # 公开属性，与 LocalFaissKnowledgeBase 一致
 
     async def fetch_faq_answer(
         self,
@@ -113,7 +124,7 @@ class RemoteRestKnowledgeBase:
         labels: Optional[List[str]] = None,
         score_threshold: float = 0.9,
     ) -> Optional[str]:
-        kb_ids = [self._kg_id] if self._kg_id else None
+        kb_ids = [self.kg_id] if self.kg_id else None
         result = await fetch_rag(
             query=query,
             kb_type=["faq"],
@@ -139,8 +150,8 @@ class RemoteRestKnowledgeBase:
         )
         return result if isinstance(result, dict) else None
 
-    async def reload(self) -> None:
-        # 远程模式无本地索引可刷新
+    async def reload(self, faq_labels: Optional[List[str]] = None) -> None:
+        # 远程模式无本地索引可刷新；参数仅为接口兼容
         return None
 
 

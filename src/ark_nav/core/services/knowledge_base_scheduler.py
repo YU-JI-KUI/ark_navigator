@@ -1,15 +1,15 @@
-"""知识库每日同步调度器（进程内 asyncio 实现）
+"""知识库同步调度器（进程内 asyncio 双循环）
 
-每个 Ray Deployment 副本各自创建一个调度器实例，按配置时间（默认 21:30）
-自动调用 knowledge_base.reload()。
+为每个 Ray Deployment 副本提供两套同步策略：
+- 全量循环：每天 21:30 ± 抖动；reload(faq_labels=None)
+- 增量循环：每 N 分钟 ± 抖动；reload(faq_labels=["hotfix"])
 
 设计要点：
-- 失败不抛出：调度循环不会因单次 reload 失败而终止
-- 幂等启动：重复调用 start_async() 只生效一次
-- 远程模式安全：RemoteRestKnowledgeBase.reload() 是 no-op，调度器照样工作
-- 副本可识别：每条日志带 replica_tag / pid / kb_id，便于多副本调试
-- 活性可证：长睡分段执行，每小时打一条心跳日志
-- async 启动：从 Deployment 的 async 上下文里调用 start_async()，确保跑在 actor 的真实 event loop 上
+- 双循环互斥：用 asyncio.Lock 保证全量和增量不会同时跑（避免 dense_index 竞争）
+- 失败不抛出：单次失败不影响下次
+- 副本可识别：日志含 domain / kg_id / replica_tag / pid（不再用对象内存地址）
+- trace_id 区分：full → kb-full-xxx，partial → kb-partial-xxx
+- 抖动错峰：全量 ±_FULL_JITTER_S，增量 ±_PARTIAL_JITTER_S
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ import os
 import random
 import uuid
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional
 
 from ark_nav.config import settings
 from ark_nav.core.services.knowledge_base import KnowledgeBase
@@ -26,13 +26,16 @@ from ark_nav.core.utils.nav_logger import get_logger, set_trace_id
 
 logger = get_logger(__name__)
 
-# 心跳间隔（秒）。把长睡拆成多段，每段结束打一条心跳日志证明调度器活着。
-_HEARTBEAT_INTERVAL_S = 3600  # 每小时
+# 心跳间隔（秒）。把长睡拆成多段，每段结束打一条心跳日志证明调度器活着
+_HEARTBEAT_INTERVAL_S = 21600  # 6 小时（频率高了日志会刷屏）
 # 心跳的最小剩余时间阈值：剩余等待时间小于该值不打心跳（避免触发前 1 秒还来一条）
 _HEARTBEAT_MIN_REMAINING_S = 60
-# 副本错峰窗口（秒）：定时器触发时再随机延迟 0~该值，把所有副本的 reload 散列到一个窗口内
-# 避免 N 个副本同时挤少数 GPU 副本导致排队长尾
-_JITTER_WINDOW_S = 600  # 10 分钟
+# 全量同步错峰窗口（秒）：避免 N 副本同时挤 GPU
+_FULL_JITTER_S = 600  # 10 分钟
+# 增量同步错峰窗口（秒）：30 分钟间隔下，错峰不能太大否则两次会重叠
+_PARTIAL_JITTER_S = 180  # 3 分钟
+# 增量循环启动延迟（秒）：避免和首次全量重叠
+_PARTIAL_INITIAL_DELAY_S = 60
 
 
 def _parse_hhmm(value: str) -> tuple[int, int]:
@@ -41,9 +44,9 @@ def _parse_hhmm(value: str) -> tuple[int, int]:
         hour = int(hh_str)
         minute = int(mm_str)
     except (ValueError, AttributeError) as e:
-        raise ValueError(f"非法的 kb_sync_time 配置: {value!r}，应为 HH:MM 格式") from e
+        raise ValueError(f"非法的 sync_time 配置: {value!r}，应为 HH:MM 格式") from e
     if not (0 <= hour < 24 and 0 <= minute < 60):
-        raise ValueError(f"kb_sync_time 超出取值范围: {value!r}")
+        raise ValueError(f"sync_time 超出取值范围: {value!r}")
     return hour, minute
 
 
@@ -56,15 +59,11 @@ def _compute_next_run(hour: int, minute: int, *, now: Optional[datetime] = None)
 
 
 def _try_get_replica_tag() -> str:
-    """尽力获取 Ray Serve 副本 id，拿不到就返回 'unknown'。
-
-    Ray 的内部 API 跨版本不稳定，所以包一层 try。
-    """
+    """尽力获取 Ray Serve 副本 id，拿不到就返回 'unknown'。"""
     try:
         from ray.serve.context import _get_internal_replica_context  # type: ignore
         ctx = _get_internal_replica_context()
         if ctx is not None:
-            # Ray Serve 不同版本字段名可能是 replica_id / replica_tag
             return getattr(ctx, "replica_id", None) \
                 or getattr(ctx, "replica_tag", None) \
                 or "unknown"
@@ -74,77 +73,154 @@ def _try_get_replica_tag() -> str:
 
 
 class KnowledgeBaseSyncScheduler:
-    """每日按固定时间触发 KnowledgeBase.reload() 的进程内调度器"""
+    """支持全量 + 增量双策略的进程内同步调度器"""
 
-    def __init__(self, knowledge_base: KnowledgeBase, sync_time: Optional[str] = None):
-        self._knowledge_base = knowledge_base
-        self._sync_time = sync_time or settings.kb_sync_time
-        self._task: Optional[asyncio.Task] = None
+    def __init__(
+        self,
+        knowledge_base: KnowledgeBase,
+        full_sync_time: Optional[str] = None,
+        partial_interval_minutes: Optional[int] = None,
+        partial_faq_labels: Optional[List[str]] = None,
+    ):
+        self._kb = knowledge_base
+        self._full_sync_time = full_sync_time or settings.kb_full_sync_time_effective
+        self._partial_interval_s = (
+            (partial_interval_minutes or settings.kb_partial_sync_interval_minutes) * 60
+        )
+        self._partial_labels = list(partial_faq_labels or settings.kb_partial_faq_labels_list)
 
-        # 副本身份标识（用于日志区分多副本）
+        # 防止全量和增量同时跑（dense_index 竞争）
+        self._reload_lock = asyncio.Lock()
+
+        # 两个独立循环 task
+        self._full_task: Optional[asyncio.Task] = None
+        self._partial_task: Optional[asyncio.Task] = None
+
+        # 副本身份标识
         self._replica_tag = _try_get_replica_tag()
         self._pid = os.getpid()
-        self._kb_id = hex(id(knowledge_base))
 
     def _tag(self) -> str:
-        """每条日志统一前缀，让多副本可区分"""
+        """每条日志统一前缀，让多副本可区分。
+
+        kg_id 来自业务知识库配置（AGENT_PLATFORM_KG_ID 等），不再用 Python 对象内存地址
+        """
         return (
-            f"domain={self._knowledge_base.domain} "
+            f"domain={self._kb.domain} "
+            f"kg_id={getattr(self._kb, 'kg_id', None)} "
             f"replica={self._replica_tag} "
-            f"pid={self._pid} "
-            f"kb_id={self._kb_id}"
+            f"pid={self._pid}"
         )
 
     async def start_async(self) -> None:
-        """异步启动调度器。
-
-        必须从 Deployment 的 async 方法（或异步 hook）里调用，确保 task 跑在
-        actor 真正使用的 event loop 上。重复调用安全。
-        """
-        if self._task is not None and not self._task.done():
+        """启动两个循环。必须在 actor 的 async 上下文里调用。重复调用安全。"""
+        if self._full_task is not None or self._partial_task is not None:
             logger.info(f"scheduler.start_async skipped (already running) {self._tag()}")
             return
 
+        # 解析全量时间，失败则放弃启动
         try:
-            hour, minute = _parse_hhmm(self._sync_time)
+            hour, minute = _parse_hhmm(self._full_sync_time)
         except ValueError:
-            logger.exception(f"scheduler.start_async failed (bad sync_time) {self._tag()}")
+            logger.exception(f"scheduler.start_async failed (bad full_sync_time) {self._tag()}")
             return
 
-        next_run_at = _compute_next_run(hour, minute)
-        # 用 asyncio.create_task —— 此时一定在 running loop 中
-        self._task = asyncio.create_task(self._run_forever(hour, minute))
+        if not self._partial_labels:
+            logger.warning(
+                f"scheduler.start_async partial labels 为空，增量同步将被跳过 {self._tag()}"
+            )
+
+        next_full_at = _compute_next_run(hour, minute)
+        self._full_task = asyncio.create_task(self._full_loop(hour, minute))
+        self._partial_task = asyncio.create_task(self._partial_loop())
 
         logger.info(
             f"scheduler.started {self._tag()} "
-            f"sync_time={hour:02d}:{minute:02d} "
-            f"next_run_at={next_run_at.isoformat(timespec='seconds')}"
+            f"full_sync_time={hour:02d}:{minute:02d} "
+            f"next_full_at={next_full_at.isoformat(timespec='seconds')} "
+            f"partial_interval_minutes={self._partial_interval_s // 60} "
+            f"partial_labels={self._partial_labels}"
         )
 
     def stop(self) -> None:
-        if self._task and not self._task.done():
-            self._task.cancel()
-            logger.info(f"scheduler.stopped {self._tag()}")
-        self._task = None
+        for task_attr in ("_full_task", "_partial_task"):
+            task = getattr(self, task_attr)
+            if task and not task.done():
+                task.cancel()
+            setattr(self, task_attr, None)
+        logger.info(f"scheduler.stopped {self._tag()}")
 
-    async def trigger_now(self) -> None:
-        """立即触发一次 reload（不影响定时循环）。供运维或调试使用。"""
-        logger.info(f"scheduler.manual_trigger {self._tag()}")
-        await self._do_reload(planned_at=None)
+    async def trigger_now(self, faq_labels: Optional[List[str]] = None) -> None:
+        """手动触发一次 reload。供运维或调试使用。
 
-    async def _run_forever(self, hour: int, minute: int) -> None:
-        """主循环：等到指定时间 → 触发 reload → 计算下次 → 继续等"""
+        Args:
+            faq_labels: None 触发全量；非空触发增量
+        """
+        full = not faq_labels
+        logger.info(f"scheduler.manual_trigger {self._tag()} full={full} labels={faq_labels}")
+        async with self._reload_lock:
+            await self._do_reload(full=full, planned_at=None, labels=faq_labels)
+
+    # ------------------------------------------------------------
+    # 全量循环
+    # ------------------------------------------------------------
+
+    async def _full_loop(self, hour: int, minute: int) -> None:
         while True:
             next_run_at = _compute_next_run(hour, minute)
             try:
-                await self._sleep_until(next_run_at)
+                await self._sleep_until_with_heartbeat(next_run_at, label="full")
             except asyncio.CancelledError:
-                logger.info(f"scheduler.cancelled {self._tag()}")
+                logger.info(f"scheduler.full_cancelled {self._tag()}")
                 return
 
-            await self._do_reload(planned_at=next_run_at)
+            # 全量抖动
+            if _FULL_JITTER_S > 0:
+                jitter_s = random.uniform(0, _FULL_JITTER_S)
+                logger.info(
+                    f"scheduler.full_jitter {self._tag()} jitter_seconds={jitter_s:.1f}"
+                )
+                try:
+                    await asyncio.sleep(jitter_s)
+                except asyncio.CancelledError:
+                    return
 
-    async def _sleep_until(self, next_run_at: datetime) -> None:
+            async with self._reload_lock:
+                await self._do_reload(full=True, planned_at=next_run_at, labels=None)
+
+    # ------------------------------------------------------------
+    # 增量循环
+    # ------------------------------------------------------------
+
+    async def _partial_loop(self) -> None:
+        if not self._partial_labels:
+            return  # 标签为空时跳过整个循环
+
+        # 启动延迟，避免和首次全量挤一起
+        try:
+            await asyncio.sleep(_PARTIAL_INITIAL_DELAY_S)
+        except asyncio.CancelledError:
+            return
+
+        while True:
+            jitter = random.uniform(0, _PARTIAL_JITTER_S)
+            wait_s = self._partial_interval_s + jitter
+            try:
+                await asyncio.sleep(wait_s)
+            except asyncio.CancelledError:
+                logger.info(f"scheduler.partial_cancelled {self._tag()}")
+                return
+
+            async with self._reload_lock:
+                await self._do_reload(
+                    full=False, planned_at=datetime.now(), labels=self._partial_labels
+                )
+
+    # ------------------------------------------------------------
+    # 公共部分
+    # ------------------------------------------------------------
+
+    async def _sleep_until_with_heartbeat(self, next_run_at: datetime, *, label: str) -> None:
         """分段睡眠到目标时间，每段结束打一条心跳日志"""
         while True:
             remaining = (next_run_at - datetime.now()).total_seconds()
@@ -156,58 +232,50 @@ class KnowledgeBaseSyncScheduler:
             remaining_after = (next_run_at - datetime.now()).total_seconds()
             if remaining_after > _HEARTBEAT_MIN_REMAINING_S:
                 logger.info(
-                    f"scheduler.heartbeat {self._tag()} "
+                    f"scheduler.heartbeat {self._tag()} loop={label} "
                     f"remaining_seconds={remaining_after:.0f} "
                     f"next_run_at={next_run_at.isoformat(timespec='seconds')}"
                 )
 
-    async def _do_reload(self, *, planned_at: Optional[datetime]) -> None:
-        """触发一次 reload，包含完整生命周期日志。
+    async def _do_reload(
+        self,
+        *,
+        full: bool,
+        planned_at: Optional[datetime],
+        labels: Optional[List[str]],
+    ) -> None:
+        """执行一次 reload，包含完整生命周期日志。
 
-        - 每次 reload 生成独立 trace_id，避免继承"触发懒启动的请求"的 trace
-          （否则 scheduler 后台任务的日志会永远挂在第一个请求的 trace 上）
-        - 定时触发时引入随机抖动 0~_JITTER_WINDOW_S 秒，把多副本的 reload 散到一个窗口内
-          手动触发（trigger_now，planned_at=None）跳过抖动，立即执行
+        必须在持有 self._reload_lock 的情况下调用。
         """
-        # 为本次 reload 分配独立 trace_id；后续 logger 和 remote_with_trace 都会带上它
-        reload_trace_id = f"kb-reload-{uuid.uuid4().hex[:12]}"
-        set_trace_id(reload_trace_id)
+        mode = "full" if full else "partial"
+        trace_id = f"kb-{mode}-{uuid.uuid4().hex[:12]}"
+        set_trace_id(trace_id)
 
         planned_str = planned_at.isoformat(timespec='seconds') if planned_at else "manual"
-
-        # 定时触发的错峰抖动（手动触发不抖）
-        if planned_at is not None and _JITTER_WINDOW_S > 0:
-            jitter_s = random.uniform(0, _JITTER_WINDOW_S)
-            logger.info(
-                f"scheduler.jitter {self._tag()} "
-                f"planned_at={planned_str} jitter_seconds={jitter_s:.1f}"
-            )
-            try:
-                await asyncio.sleep(jitter_s)
-            except asyncio.CancelledError:
-                logger.info(f"scheduler.cancelled_during_jitter {self._tag()}")
-                return
-
-        logger.info(f"scheduler.triggered {self._tag()} planned_at={planned_str}")
+        logger.info(
+            f"scheduler.triggered {self._tag()} mode={mode} labels={labels} "
+            f"planned_at={planned_str}"
+        )
 
         start_ts = datetime.now()
         success = False
         error_msg: Optional[str] = None
         try:
-            await self._knowledge_base.reload()
+            await self._kb.reload(faq_labels=labels)
             success = True
         except Exception as e:
             error_msg = f"{type(e).__name__}: {e}"
-            logger.exception(f"scheduler.failed {self._tag()}")
+            logger.exception(f"scheduler.failed {self._tag()} mode={mode}")
         finally:
             cost_ms = (datetime.now() - start_ts).total_seconds() * 1000
             if success:
                 logger.info(
-                    f"scheduler.completed {self._tag()} "
+                    f"scheduler.completed {self._tag()} mode={mode} "
                     f"cost_ms={cost_ms:.1f} success=true"
                 )
             else:
                 logger.warning(
-                    f"scheduler.completed {self._tag()} "
+                    f"scheduler.completed {self._tag()} mode={mode} "
                     f"cost_ms={cost_ms:.1f} success=false error={error_msg}"
                 )
