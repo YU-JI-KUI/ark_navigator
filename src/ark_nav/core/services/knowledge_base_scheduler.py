@@ -34,8 +34,6 @@ _HEARTBEAT_MIN_REMAINING_S = 60
 _FULL_JITTER_S = 600  # 10 分钟
 # 增量同步错峰窗口（秒）：30 分钟间隔下，错峰不能太大否则两次会重叠
 _PARTIAL_JITTER_S = 180  # 3 分钟
-# 增量循环启动延迟（秒）：避免和首次全量重叠
-_PARTIAL_INITIAL_DELAY_S = 60
 
 
 def _parse_hhmm(value: str) -> tuple[int, int]:
@@ -202,13 +200,20 @@ class KnowledgeBaseSyncScheduler:
         if not self._partial_category_id:
             return  # category_id 为空时跳过整个循环
 
-        # 启动延迟，避免和首次全量挤一起
-        try:
-            await asyncio.sleep(_PARTIAL_INITIAL_DELAY_S)
-        except asyncio.CancelledError:
-            return
-
+        # 首次立即触发一次（验证配置正确、运维部署后能立刻看到效果）
+        # 之后按 interval + jitter 循环
+        # 注意：bootstrap 阶段已经完成首次全量，全量循环要等到 21:30 才跑，
+        # 所以这里立即跑增量不会和全量撞
         while True:
+            try:
+                async with self._reload_lock:
+                    await self._do_reload(
+                        full=False, planned_at=datetime.now(), category_id=self._partial_category_id,
+                    )
+            except asyncio.CancelledError:
+                logger.info(f"scheduler.partial_cancelled {self._tag()}")
+                return
+
             jitter = random.uniform(0, _PARTIAL_JITTER_S)
             wait_s = self._partial_interval_s + jitter
             try:
@@ -216,11 +221,6 @@ class KnowledgeBaseSyncScheduler:
             except asyncio.CancelledError:
                 logger.info(f"scheduler.partial_cancelled {self._tag()}")
                 return
-
-            async with self._reload_lock:
-                await self._do_reload(
-                    full=False, planned_at=datetime.now(), category_id=self._partial_category_id
-                )
 
     # ------------------------------------------------------------
     # 公共部分

@@ -61,29 +61,46 @@ class FaissIndexStore:
             )
         else:
             # 增量同步：只拉指定 categoryId 的 FAQ
+            # 注意：远程 API 用 categoryId 过滤，但响应不返回 categoryId 字段；
+            # 本地按 categoryName 匹配——从拉到的数据中提取 categoryName 集合作为删除键
             logger.info(f"FaissIndexStore[{self.domain}] 增量加载 kg_id={kg_id} category_id={faq_category_id}")
             partial_faq = await _get_faq_page_data(kg_id, category_id=faq_category_id)
-            # 删本地匹配 categoryId 的 FAQ 条目，保留其他 FAQ 和所有 table
-            target_cid = str(faq_category_id)
+
+            if not partial_faq:
+                # 拉到空——可能 API 异常，也可能目录真的被清空。保守起见不动旧数据。
+                # 如果运维真的清空了目录，等下次 21:30 全量同步修正
+                logger.warning(
+                    f"FaissIndexStore[{self.domain}] 增量拉到 0 条数据 "
+                    f"category_id={faq_category_id}，保留旧数据不动"
+                )
+                return
+
+            # 从拉到的数据中提取这个 categoryId 对应的所有 categoryName（通常只有 1 个）
+            target_names = {c.get("categoryName", "") for c in partial_faq}
+            target_names.discard("")
+
             kept = [
                 c for c in self._all_chains
-                if not self._is_faq_in_category(c, target_cid)
+                if not self._is_faq_in_category_names(c, target_names)
             ]
             new_chains = kept + partial_faq
             logger.info(
                 f"FaissIndexStore[{self.domain}] 增量数据 kept={len(kept)} "
-                f"new_partial={len(partial_faq)} total={len(new_chains)}"
+                f"new_partial={len(partial_faq)} total={len(new_chains)} "
+                f"matched_category_names={sorted(target_names)}"
             )
 
         self._all_chains = new_chains
         await self.build_index(new_chains, is_reload=True)
 
     @staticmethod
-    def _is_faq_in_category(chain: Dict[str, Any], target_category_id: str) -> bool:
-        """判断一条 chain 是否是 FAQ 类型且属于指定 categoryId"""
+    def _is_faq_in_category_names(chain: Dict[str, Any], target_names: set) -> bool:
+        """判断一条 chain 是否是 FAQ 类型且 categoryName 属于目标集合"""
+        if not target_names:
+            return False
         if chain.get("kbType") != "faq":
             return False
-        return str(chain.get("categoryId", "")) == target_category_id
+        return chain.get("categoryName", "") in target_names
 
     @print_execution_time
     async def build_index(self, chains: List[Dict[str, Any]], is_reload: bool):

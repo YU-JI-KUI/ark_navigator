@@ -6,9 +6,6 @@
 - FAQ 知识库分页拉取（_get_faq_page_data）
 - Table 知识库拉取（_get_faq_table_data）
 - Prompt 模板查询（_get_prompt_by_name / init_prompt_from_agent_rag）
-
-注意：和平安大模型平台（call_bigmodel_api）是完全独立的两个外部系统，
-此模块不应该出现任何大模型 API 相关代码。
 """
 from __future__ import annotations
 
@@ -284,7 +281,8 @@ async def _get_faq_page_data(
         category_id: 目录 ID。传入则只拉该目录下的 FAQ（用于增量同步）；
                      None 表示拉取所有目录（全量同步）
 
-    返回字典中**始终带 categoryId 字段**，用于本地按目录精准匹配/删除。
+    返回字典含 categoryName 字段（API 实际返回），上层按 categoryName 做本地匹配。
+    远程 API 响应不返回 categoryId，所以本地不存这个字段。
     """
     try:
         faq_page_url = await _get_faq_page_url()
@@ -373,14 +371,12 @@ async def _get_faq_page_data(
 
                     answer = record.get("faqAnswer", {}).get("content", "")
                     category_name = record.get("categoryName", "")
-                    record_category_id = str(record.get("categoryId", "") or "")
                     if status == "1":
                         for question in [standard_question] + similar_questions:
                             all_faq_data.append({
                                 "text": question,
                                 "answer": answer,
                                 "categoryName": category_name,
-                                "categoryId": record_category_id,
                                 "status": status,
                                 "kbType": "faq",
                                 "kbLabel": "#".join(labels),
