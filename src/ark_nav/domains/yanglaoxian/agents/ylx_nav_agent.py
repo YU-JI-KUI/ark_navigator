@@ -41,6 +41,9 @@ _YLX_AGENT_MAX_REPLICAS = int(os.getenv("YLX_AGENT_MAX_REPLICAS", 4))
 
 @serve.deployment(
     name="NavYLXAgentDeployment",
+    # 加 user_config 触发 Ray Serve 在副本启动时自动调 reconfigure
+    # 用于在 actor event loop 上主动启动 scheduler，不依赖业务请求触发
+    user_config={},
     ray_actor_options={
         "num_cpus": 0.5,
     },
@@ -71,11 +74,23 @@ class NavYLXAgentDeployment:
         # 同步阻塞等索引就绪：LOCAL 拉远程建索引，REMOTE 立即返回
         bootstrap_knowledge_base(self.knowledge_base)
         self.onekey_svc = OneKeyService(self.knowledge_base)
-        # 调度器在首个请求时懒启动，确保 task 跑在 actor 真实 event loop 上
+        # scheduler 实例此处构造，启动延迟到 reconfigure（在 actor event loop 上跑）
         self._sync_scheduler = KnowledgeBaseSyncScheduler(self.knowledge_base)
         self._scheduler_started = False
 
+    async def reconfigure(self, user_config) -> None:
+        """Ray Serve 副本启动完成后自动调用一次，跑在 actor 自己的 event loop 上。
+
+        这是"保证 scheduler 必启动"的主路径：
+        - 不依赖业务请求触发（懒启动模式下流量不均副本可能永不启动）
+        - 跑在 actor loop 上（避免独立线程跨 event loop 的 httpx client 问题）
+        - 重复调用安全（start_async 内部有幂等检查）
+        """
+        logger.info("NavYLXAgentDeployment.reconfigure triggered, starting scheduler")
+        await self._ensure_scheduler_started()
+
     async def _ensure_scheduler_started(self) -> None:
+        """业务方法兜底入口：万一 reconfigure 未触发（极端场景），首次业务请求时仍能启动"""
         if not self._scheduler_started:
             self._scheduler_started = True
             await self._sync_scheduler.start_async()

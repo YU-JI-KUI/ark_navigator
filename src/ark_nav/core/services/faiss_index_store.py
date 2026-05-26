@@ -49,12 +49,15 @@ class FaissIndexStore:
         if not kg_id:
             raise ValueError("知识库ID为空，请检查配置")
 
+        # 全量分支会主动清空 embedding cache 做防御性兜底；增量分支保留 cache 享受加速
+        clear_cache = False
         if not faq_category_id:
             # 全量同步
             logger.info(f"FaissIndexStore[{self.domain}] 全量加载 kg_id={kg_id}")
             faq_chains = await _get_faq_page_data(kg_id)
             table_chains = await _get_faq_table_data(kg_id)
             new_chains = faq_chains + table_chains
+            clear_cache = True
             logger.info(
                 f"FaissIndexStore[{self.domain}] 全量数据 faq={len(faq_chains)} "
                 f"table={len(table_chains)} total={len(new_chains)}"
@@ -91,7 +94,7 @@ class FaissIndexStore:
             )
 
         self._all_chains = new_chains
-        await self.build_index(new_chains, is_reload=True)
+        await self.build_index(new_chains, is_reload=True, clear_cache=clear_cache)
 
     @staticmethod
     def _is_faq_in_category_names(chain: Dict[str, Any], target_names: set) -> bool:
@@ -103,11 +106,22 @@ class FaissIndexStore:
         return chain.get("categoryName", "") in target_names
 
     @print_execution_time
-    async def build_index(self, chains: List[Dict[str, Any]], is_reload: bool):
-        """构建内存中的向量索引（不落盘）"""
+    async def build_index(
+        self,
+        chains: List[Dict[str, Any]],
+        is_reload: bool,
+        clear_cache: bool = False,
+    ):
+        """构建内存中的向量索引（不落盘）
+
+        Args:
+            chains: 完整的 chain 列表
+            is_reload: 标记是否是 reload（非首次加载）
+            clear_cache: 是否清空 embedding cache（全量同步建议 True，增量同步 False）
+        """
         if not chains:
             raise ValueError("数据为空")
-        await self.retriever.build_index(chains)
+        await self.retriever.build_index(chains, clear_cache=clear_cache)
         self.is_index_updated = is_reload
 
     @print_execution_time
