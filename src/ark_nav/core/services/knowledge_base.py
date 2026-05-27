@@ -213,4 +213,11 @@ def bootstrap_knowledge_base(knowledge_base: KnowledgeBase) -> None:
     except Exception:
         logger.exception(f"bootstrap_knowledge_base failed domain={knowledge_base.domain}")
         raise
+    finally:
+        # 关键：bootstrap 在独立线程的临时 event loop 上调过 httpx，
+        # httpx 的连接池绑定到了该 loop。线程退出 → loop 关闭 → client 实际已死。
+        # 必须清空单例，让后续在 actor event loop 上调用 get_client() 时重建。
+        # 否则 reconfigure 触发的首次 partial reload 会立即报 'Event loop is closed'。
+        from ark_nav.core.utils.http_client_manager import reset_client_singleton
+        reset_client_singleton()
     logger.info(f"bootstrap_knowledge_base done domain={knowledge_base.domain}")

@@ -117,3 +117,18 @@ async def close_client():
     注意：通常由装饰器自动调用，无需手动调用
     """
     await _manager.close()
+
+
+def reset_client_singleton() -> None:
+    """强制置空 httpx client 单例，让下次 get_client() 重建。
+
+    使用场景：bootstrap 阶段在独立线程 + 临时 event loop 上使用过 httpx，
+    httpx 的连接池绑定到了已关闭的 loop。如果不清空，下次在 actor 的真实
+    event loop 上调用同一个 client 会报 `RuntimeError: Event loop is closed`。
+
+    注意：故意不调用 aclose()——loop 已死，aclose 内部会再次报错。
+    连接资源由 Python GC 自然回收，因为 bootstrap 只调几次，泄漏可控。
+    """
+    if _manager._client is not None:
+        _manager._client = None
+        logger.info("httpx client 单例已重置，下次 get_client() 会在当前 event loop 重建")
