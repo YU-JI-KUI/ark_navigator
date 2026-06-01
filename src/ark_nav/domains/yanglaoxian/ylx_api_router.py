@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Request
-from ark_nav.core.services.data_pusher_service import DataPusherService
 import os
 import json
 from typing import AsyncIterator
@@ -7,12 +6,10 @@ from fastapi.responses import StreamingResponse
 from ark_agentic.core.stream import AgentStreamEvent, StreamEventBus
 from ark_agentic.core.stream.output_formatter import create_formatter
 import asyncio
-from ark_nav.core.utils.nav_logger import get_logger, push_to_argilla, remote_with_trace
+from ark_nav.core.utils.nav_logger import get_logger, remote_with_trace
 from ark_nav.core.services.agent_platform_client import init_prompt_from_agent_rag
 from ark_nav.domains.shouxian.router_schemas import IntentRequest, IntentResult
 from ark_nav.domains.yanglaoxian.router_schemas import YLXRequest
-
-PUSHER = DataPusherService(url=os.getenv("DATAPULSE_URL"), channel="ylXian")
 
 logger = get_logger("ark_nav")
 
@@ -28,7 +25,6 @@ def create_router(agent_handler):
         }
 
     @router.post("/classify")
-    @push_to_argilla((lambda data: PUSHER.push(data)))
     async def classify(request: IntentRequest, raw_request: Request) -> IntentResult:
         """
         接收 app_key、app_secret 和 user_message，返回意图分类结果。

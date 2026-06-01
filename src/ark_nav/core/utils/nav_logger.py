@@ -271,38 +271,3 @@ def log_http_request(logger: logging.Logger, request, raw_request) -> None:
         f"app_key={getattr(request, 'app_key', '-')} "
         f"user_message={getattr(request, 'user_message', '-')}"
     )
-
-
-def push_to_argilla(push_func: Callable[[dict], Any]):
-    """旧接口；保持以兼容 ylx_api_router"""
-
-    def decorator(func: Callable):
-        @wraps(func)
-        async def wrapper(request: Any, raw_request: Request):
-            response = await func(request, raw_request)
-            try:
-                intention = response.result if hasattr(response, "result") else response.get("result", "unknown")
-                masked_user_message = mask_text(getattr(request, "user_message", "") or "")
-                history = (
-                    [{"role": msg.role, "text": msg.text} for msg in request.history]
-                    if getattr(request, "history", None)
-                    else []
-                )
-                log_entry = {
-                    "question": masked_user_message,
-                    "intention": intention,
-                    "request_id": getattr(request, "request_id", None),
-                    "user_id": getattr(request, "user_id", None),
-                    "history": history,
-                    "session_id": getattr(request, "session_id", None),
-                    "timestamp": datetime.now().isoformat(),
-                    "metadata": getattr(request, "metadata", None),
-                }
-                await push_func(log_entry)
-            except Exception:
-                logging.getLogger(__name__).exception(f"push_to_argilla failed func={func.__name__}")
-            return response
-
-        return wrapper
-
-    return decorator

@@ -152,18 +152,44 @@ class NavYLXAgentDeployment:
     @propagate_trace
     async def run(self, request: YLXRequest) -> YLXResponse:
         await self._ensure_scheduler_started()
+
+        # 入参校验：message 必须非空
+        if not request.message or not request.message.strip():
+            logger.warning(f"{request.msg_id}, 请求 message 为空，直接拒识")
+            return YLXResponse(
+                code="-1",
+                code_msg="message 不能为空",
+                source_bu_type="ylXian",
+                card_content={},
+                card_type="ylXian",
+                service_type="rejection",
+                extrainfo={},
+            )
+
         try:
             logger.info(f"{request.msg_id}, User request: {request}")
             message = request.message
             intent = await self.process(query=message, msg_id=request.msg_id)
             logger.info(f"{request.msg_id}, 【意图识别结果】: {intent}")
             if intent.result in ["养老险意图"]:
-                result = await self.onekey_svc.process(
-                    msg_id=request.msg_id,
-                    message=message,
-                    user_id=request.user_id,
-                    channel=request.buChannel.get("channel", "ylXian")
-                )
+                # buChannel 防御：客户端可能不传 buChannel（schema 允许 None）
+                channel = (request.buChannel or {}).get("channel", "ylXian")
+                # 一键开关：默认开启，extrainfo.ylx_onekey_enabled 显式关闭后只调小安
+                if request.is_onekey_enabled:
+                    logger.info(f"{request.msg_id}, 【走完整一键流程】")
+                    result = await self.onekey_svc.process(
+                        msg_id=request.msg_id,
+                        message=message,
+                        user_id=request.user_id,
+                        channel=channel,
+                    )
+                else:
+                    logger.info(f"{request.msg_id}, 【仅调小安机器人，不走一键】")
+                    result = await self.onekey_svc.call_xiaoan_only(
+                        msg_id=request.msg_id,
+                        message=message,
+                        user_id=request.user_id,
+                    )
                 return YLXResponse(
                     code=result.code,
                     code_msg=result.code_msg,

@@ -519,7 +519,6 @@ flowchart TD
     <li>流式响应实际是"伪流式"，仍同步等 run 完成才发完成事件</li>
     <li>run_agent 的 finally 在异常时也只 set done_event，<strong>异常本身没传播给客户端</strong></li>
     <li><code>request.buChannel.get(...)</code> 潜在 NPE（buChannel 可能为 None）</li>
-    <li>PUSHER 在 module-level 实例化，env 未设时 url 为 None</li>
   </ol>
 </section>
 

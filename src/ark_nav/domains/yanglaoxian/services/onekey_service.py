@@ -202,3 +202,19 @@ class OneKeyService:
                 return result
         else:
             return OneKeyResult(card_content=data)
+
+    @print_execution_time
+    async def call_xiaoan_only(self, msg_id: str, message: str, user_id: str) -> OneKeyResult:
+        """只调小安机器人，不走一键编排（不做 LLM 二次识别、不查 Table 知识库）。
+
+        返回小安机器人的原始 data 作为 card_content，结果 source 保持 "ylXian"。
+        用于 YLXRequest.is_onekey_enabled = False 的场景。
+        """
+        payload = XiaoAnRobotRequests(
+            repository_id=int(os.getenv("XIAOAN_REPOSITORY_ID")),
+            question=message,
+            user_id=user_id,
+            label=["app", "好福利"]
+        ).to_dict()
+        data = await self.robot.chat(msg_id=msg_id, params=payload)
+        return OneKeyResult(card_content=data)

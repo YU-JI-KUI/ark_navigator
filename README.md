@@ -135,9 +135,13 @@ serve run ark_nav.serve_app:build_app
 
 ### 环境变量
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `USE_GPU` | 是否使用GPU，Windows标机请设置成False | `true` |
+服务的所有环境变量分组列在 **[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)** 中，包含必填性、默认值、示例和说明。
+
+快速参考：
+
+- **本地开发**：复制 `.env.sample` 为 `.env`，按 `docs/ENVIRONMENT.md` 的"最小启动示例"填写关键字段
+- **生产部署**：通过容器编排注入环境变量；必填项缺失会导致服务启动失败
+- **新增/删除变量**：必须同步更新 `docs/ENVIRONMENT.md`，避免文档漂移
 
 ### GPU要求
 

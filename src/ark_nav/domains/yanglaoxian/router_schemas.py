@@ -79,6 +79,32 @@ class YLXRequest:
     stream: Optional[bool] = False
     stream_protocol: Literal["agui", "internal", "enterprise", "alone"] = field(default="enterprise")
 
+    @property
+    def is_onekey_enabled(self) -> bool:
+        """是否启用养老险一键场景。
+
+        默认 True（向后兼容老客户端）。客户端可通过 extrainfo.ylx_onekey_enabled
+        显式关闭，关闭后仅调小安机器人返回原始结果，不走一键编排。
+
+        取值约定（大小写不敏感）：
+        - 不传 / 字段缺失 / None → True（默认开启）
+        - bool True / "true" / "yes" / "1" → True
+        - bool False / "false" / "no" / "0" → False
+        - 其他无法识别的值 → True（默认开启，保守）
+        """
+        if not self.extrainfo:
+            return True
+        raw = self.extrainfo.get("ylx_onekey_enabled")
+        if raw is None:
+            return True
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            return raw.strip().lower() not in ("false", "no", "0")
+        if isinstance(raw, (int, float)):
+            return bool(raw)
+        return True
+
 
 @dataclass
 class YLXResponse:
