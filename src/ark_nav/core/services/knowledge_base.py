@@ -159,20 +159,38 @@ def build_knowledge_base(
     embedding_model_handle,
     domain: str,
     kg_id: Optional[str],
+    mode: Optional[str] = None,
 ) -> KnowledgeBase:
-    """根据 KBConfig.MODE 构造对应实现。
+    """构造 KnowledgeBase 实例，支持 deployment 级别独立控制模式。
 
     Args:
         embedding_model_handle: Ray EmbeddingModelDeployment handle；仅 LOCAL 模式使用，REMOTE 模式可传 None
         domain: 业务域名，用于隔离索引目录与日志标记
         kg_id: 智能体平台知识库 ID；LOCAL 模式必填
+        mode: 显式指定模式 "local" / "remote"（大小写不敏感）。
+              传入则覆盖全局 KBConfig.MODE，用于 deployment 独立控制；
+              传入无效值时打 warning 并回退到全局 KBConfig.MODE；
+              传入 None 则走全局 KBConfig.MODE。
+
+    优先级链：传入 mode > KBConfig.MODE > 代码默认（"remote"）。
     """
-    if KBConfig.is_local_mode():
+    # 解析有效模式：传入优先，无效值/None 回退到全局
+    candidate = (mode or "").strip().lower() if mode is not None else ""
+    if mode is not None and candidate not in ("local", "remote"):
+        logger.warning(
+            f"build_knowledge_base[{domain}] 收到无效 mode={mode!r}，"
+            f"回退到 KBConfig.MODE={KBConfig.MODE}"
+        )
+        candidate = ""
+    effective_mode = candidate or KBConfig.MODE.lower()
+    source = "param" if candidate else "global"
+
+    if effective_mode == "local":
         if embedding_model_handle is None:
             raise ValueError(f"LOCAL 模式下 build_knowledge_base[{domain}] 需要 embedding_model_handle")
-        logger.info(f"build_knowledge_base domain={domain} mode=local")
+        logger.info(f"build_knowledge_base domain={domain} mode=local mode_source={source}")
         return LocalFaissKnowledgeBase(embedding_model_handle=embedding_model_handle, domain=domain, kg_id=kg_id or "")
-    logger.info(f"build_knowledge_base domain={domain} mode=remote")
+    logger.info(f"build_knowledge_base domain={domain} mode=remote mode_source={source}")
     return RemoteRestKnowledgeBase(domain=domain, kg_id=kg_id)
 
 

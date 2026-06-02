@@ -67,13 +67,17 @@
 
 | 变量名 | 必填 | 默认值 | 示例 | 说明 |
 |---|---|---|---|---|
-| `KB_MODE` | 否 | `local` | `local` / `remote` | 知识库模式。`local`=本地 FAISS 索引；`remote`=远程 REST API（紧急回滚用） |
+| `KB_MODE` | 否 | `remote` | `local` / `remote` | 全局知识库模式。`local`=本地 FAISS 索引；`remote`=远程 REST API |
+| `SHOUXIAN_KB_MODE` | 否 | 无（fallback `KB_MODE`） | `local` / `remote` | 寿险 deployment 模式覆盖。设置后只影响寿险，未设置则走 `KB_MODE` |
+| `YLX_KB_MODE` | 否 | 无（fallback `KB_MODE`） | `local` / `remote` | 养老险 deployment 模式覆盖。设置后只影响养老险，未设置则走 `KB_MODE` |
 | `KB_FULL_SYNC_TIME` | 否 | `21:30` | `21:30` | 每日全量同步时间（HH:MM 24 小时制） |
 | `KB_PARTIAL_SYNC_INTERVAL_MINUTES` | 否 | `30` | `30` | 增量同步间隔（分钟） |
 | `KB_PARTIAL_FAQ_CATEGORY_ID` | 否 | `""` | `26687` | 增量同步的 FAQ 目录 ID（远程平台 categoryId）。空字符串=禁用增量同步 |
-| `SHOUXIAN_AGENT_PLATFORM_KG_ID` | **条件** | 无 | `4032` | 寿险知识库 ID。`KB_MODE=local` 时**必填** |
+| `SHOUXIAN_AGENT_PLATFORM_KG_ID` | **条件** | 无 | `4032` | 寿险知识库 ID。寿险走 `local` 模式时**必填** |
 
-> `AGENT_PLATFORM_KG_ID`（养老险知识库 ID）在第 2 节列出——`KB_MODE=local` 时同样必填。
+> `AGENT_PLATFORM_KG_ID`（养老险知识库 ID）在第 2 节列出——养老险走 `local` 模式时同样必填。
+>
+> **模式优先级链**：`SHOUXIAN_KB_MODE` / `YLX_KB_MODE`（deployment 专属）> `KB_MODE`（全局）> 代码默认 `remote`
 
 ---
 

@@ -6,8 +6,10 @@ import os
 class KBConfig:
     """知识库配置（模式 + 同步策略）"""
 
-    # 实现模式："local"（本地 FAISS，默认）/ "remote"（远程 REST API 回退）
-    MODE = os.getenv("KB_MODE", "local")
+    # 实现模式："local"（本地 FAISS）/ "remote"（远程 REST API）
+    # 全局默认 remote（保守）；生产环境应通过 .env 显式设置 KB_MODE=local
+    # 每个 deployment 还可通过专属 env（如 SHOUXIAN_KB_MODE / YLX_KB_MODE）覆盖全局
+    MODE = os.getenv("KB_MODE", "remote")
 
     # 全量同步时间（HH:MM, 24 小时制）：每天一次刷新所有 FAQ + Table
     FULL_SYNC_TIME = os.getenv("KB_FULL_SYNC_TIME", "21:30")

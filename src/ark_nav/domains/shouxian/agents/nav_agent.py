@@ -64,6 +64,8 @@ class NavAgentDeployment:
             embedding_model_handle=embedding_model_handle,
             domain="shouxian",
             kg_id=os.getenv("SHOUXIAN_AGENT_PLATFORM_KG_ID"),
+            # 寿险独立模式覆盖：未设置则走全局 KB_MODE；设置后只影响寿险
+            mode=os.getenv("SHOUXIAN_KB_MODE"),
         )
         # 同步阻塞等索引就绪：LOCAL 拉远程建索引，REMOTE 立即返回
         bootstrap_knowledge_base(self.knowledge_base)
