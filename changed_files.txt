@@ -1,10 +1,9 @@
 # 本次改动清单，由 sync_single.py 自动生成
 # 普通行 = 复制到内网；[DEL] 开头 = 在内网删除该文件
-# 基于 origin/master @ d967c9e2
+# 基于 origin/master @ 3e8ab105
 # 涉及 commit（动作以 origin/master 为准：存在=复制、不存在=删除）:
-#   70b14f54 KB_MODE 新增 none：跳过知识库检索直连大模型
-.env.sample
-docs/ENVIRONMENT.md
-src/ark_nav/core/services/knowledge_base.py
-src/ark_nav/core/utils/kb_config.py
-tests/test_kb_mode_none.py
+#   c18d2076 search 强制忽略 reject_reconfirm 入参
+#   26d1eb62 torch 锁定 2.9.0 适配 V100
+src/ark_nav/domains/shouxian/router_schemas.py
+tests/test_search_reject_reconfirm.py
+pyproject.toml
