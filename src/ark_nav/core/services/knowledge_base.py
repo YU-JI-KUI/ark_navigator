@@ -111,6 +111,37 @@ class LocalFaissKnowledgeBase:
         logger.info(f"LocalFaissKnowledgeBase[{self.domain}] reload done mode={mode}")
 
 
+class NullKnowledgeBase:
+    """空实现：KB_MODE=none 时使用。
+
+    检索永不命中（立即返回 None），业务链路自然落到大模型分类，
+    实现"search 直连大模型"而不需要 service 层感知模式差异。
+    reload 为 no-op，启动无需拉数据，同步调度器照常驱动也无副作用。
+    """
+
+    def __init__(self, domain: str):
+        self.domain = domain
+        self.kg_id: Optional[str] = None
+
+    async def fetch_faq_answer(
+        self,
+        query: str,
+        labels: Optional[List[str]] = None,
+        score_threshold: float = 0.9,
+    ) -> Optional[str]:
+        return None
+
+    async def fetch_table_knowledge(
+        self,
+        query: str,
+        score_threshold: float = 0.85,
+    ) -> Optional[Dict[str, Any]]:
+        return None
+
+    async def reload(self, faq_category_id: Optional[str] = None) -> None:
+        return None
+
+
 class RemoteRestKnowledgeBase:
     """基于智能体平台远程 REST 接口的实现"""
 
@@ -167,16 +198,17 @@ def build_knowledge_base(
         embedding_model_handle: Ray EmbeddingModelDeployment handle；仅 LOCAL 模式使用，REMOTE 模式可传 None
         domain: 业务域名，用于隔离索引目录与日志标记
         kg_id: 智能体平台知识库 ID；LOCAL 模式必填
-        mode: 显式指定模式 "local" / "remote"（大小写不敏感）。
+        mode: 显式指定模式 "local" / "remote" / "none"（大小写不敏感）。
               传入则覆盖全局 KBConfig.MODE，用于 deployment 独立控制；
               传入无效值时打 warning 并回退到全局 KBConfig.MODE；
               传入 None 则走全局 KBConfig.MODE。
+              "none" = 跳过知识库检索（永不命中），业务直连大模型。
 
     优先级链：传入 mode > KBConfig.MODE > 代码默认（"remote"）。
     """
     # 解析有效模式：传入优先，无效值/None 回退到全局
     candidate = (mode or "").strip().lower() if mode is not None else ""
-    if mode is not None and candidate not in ("local", "remote"):
+    if mode is not None and candidate not in ("local", "remote", "none"):
         logger.warning(
             f"build_knowledge_base[{domain}] 收到无效 mode={mode!r}，"
             f"回退到 KBConfig.MODE={KBConfig.MODE}"
@@ -185,6 +217,9 @@ def build_knowledge_base(
     effective_mode = candidate or KBConfig.MODE.lower()
     source = "param" if candidate else "global"
 
+    if effective_mode == "none":
+        logger.info(f"build_knowledge_base domain={domain} mode=none mode_source={source} 检索跳过，直连大模型")
+        return NullKnowledgeBase(domain=domain)
     if effective_mode == "local":
         if embedding_model_handle is None:
             raise ValueError(f"LOCAL 模式下 build_knowledge_base[{domain}] 需要 embedding_model_handle")
