@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional,Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 @dataclass
@@ -37,7 +37,15 @@ class SearchIntentRequest(BaseModel):
     msg_id: Optional[str] = None
     request_id: Optional[str] = None
     user_id: Optional[str] = None
+    # 已废弃，强制恒为 False：二次确认（重写+再识别）会多出最多两次串行大模型
+    # 调用拖慢 search。上游仍在传 true，为兼容保留字段、忽略入参；
+    # 待上游全部停止传参后可删除此字段与下方校验器
     reject_reconfirm: Optional[bool] = False
+
+    @field_validator("reject_reconfirm", mode="after")
+    @classmethod
+    def _force_reject_reconfirm_false(cls, v: Optional[bool]) -> bool:
+        return False
 
 # 定义ChatCompletionRequest类
 class ChatCompletionRequest(BaseModel):
