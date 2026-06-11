@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Union
+import asyncio
 import json
 import re
 import copy
@@ -19,6 +20,25 @@ LIFE_INSURANCE = "寿险意图"
 REJECTION = "拒识"
 
 logger = get_logger(__name__)
+
+# 缓存 key 归一化要剥掉的空白和常见中英文标点：
+# "转人工"/"转人工。"/" 转人工 " 是同一个意图，归一化后共享同一条缓存
+_CACHE_KEY_PUNCT = " \t\r\n。．.，,！!？?；;：:、~～"
+
+
+def _normalize_cache_key(message: str) -> str:
+    collapsed = re.sub(r"\s+", " ", (message or "").strip())
+    normalized = collapsed.strip(_CACHE_KEY_PUNCT)
+    # 纯标点输入归一化后为空串，退回原文避免不同输入互相串缓存
+    return normalized or collapsed
+
+
+def _faq_cache_key(_f, _self, message):
+    return f"faq:{_normalize_cache_key(message)}"
+
+
+def _intent_cache_key(_f, _self, message, reject_reconfirm, history):
+    return f"intent:{_normalize_cache_key(message)}:{reject_reconfirm}:{history}"
 
 def _extract_by_path(data: Any, path: str) -> Optional[Union[Any, List[Any]]]:
     """通过路径字符串提取数据，自动处理数组索引和通配符"""
@@ -327,17 +347,33 @@ class ShouXianNavService:
                 logger.warn(f"Invalid request: Empty or invalid messages")
                 return final_result
 
-            rag_answer = await self.rag_service.fetch_rag(msg_id=request.msg_id, message=request.message)
-            if rag_answer in [LIFE_INSURANCE]:
-                final_result = "life_insurance"
-            elif rag_answer in [REJECTION]:
-                final_result = "rejection"
-            else:
-                model_return = await self.classify_service.shouxian_classify_intent(request.msg_id, request.message, request.reject_reconfirm, history=[])
-                if model_return in [LIFE_INSURANCE]:
+            # FAQ 检索和大模型分类并行发起：阈值 0.9 下 FAQ 大概率不命中，
+            # 串行会把两段耗时叠加；并行后总耗时 ≈ max(检索, 大模型) 而非两者之和。
+            # 代价是 FAQ 命中时浪费一次大模型调用（命中即取消，未完成的请求会被中断）
+            rag_task = asyncio.create_task(
+                self.rag_service.fetch_rag(msg_id=request.msg_id, message=request.message))
+            model_task = asyncio.create_task(
+                self.classify_service.shouxian_classify_intent(
+                    request.msg_id, request.message, request.reject_reconfirm, history=[]))
+            try:
+                rag_answer = await rag_task
+                if rag_answer in [LIFE_INSURANCE]:
                     final_result = "life_insurance"
-                else:
+                elif rag_answer in [REJECTION]:
                     final_result = "rejection"
+                else:
+                    model_return = await model_task
+                    if model_return in [LIFE_INSURANCE]:
+                        final_result = "life_insurance"
+                    else:
+                        final_result = "rejection"
+            finally:
+                if not model_task.done():
+                    model_task.cancel()
+                elif not model_task.cancelled() and model_task.exception():
+                    # 取回被短路任务的异常，避免 GC 时报 "exception was never retrieved"
+                    logger.warning(
+                        f"{request.msg_id}, 并行意图分类任务失败（已被 FAQ 结果短路）: {model_task.exception()}")
 
             return self.post_search(final_result)
 
@@ -474,7 +510,7 @@ class RagService:
         logger.info(f"fetch_rag msg_id={msg_id} message={message} result={rag_answer}")
         return rag_answer
 
-    @cached(ttl=600, namespace="shouxian", serializer=StringSerializer(), noself=True)
+    @cached(ttl=600, namespace="shouxian", serializer=StringSerializer(), key_builder=_faq_cache_key)
     async def _fetch_faq(self, message: str):
         return await self.knowledge_base.fetch_faq_answer(query=message, score_threshold=0.9)
 
@@ -500,7 +536,7 @@ class ClassifyService:
         else:
             return LIFE_INSURANCE
 
-    @cached(ttl=600, namespace="shouxian", serializer=StringSerializer(), noself=True)
+    @cached(ttl=600, namespace="shouxian", serializer=StringSerializer(), key_builder=_intent_cache_key)
     async def _classify_intent(self, message: str, reject_reconfirm, history):
         request = IntentRequest(
             app_key=os.getenv("APP_KEY"),

@@ -47,7 +47,10 @@ async def classify_user_intent(
             query=query,
             scene_id=scene_id,
             app_key=app_key,
-            app_secret=app_secret
+            app_secret=app_secret,
+            # 合法输出只有「寿险意图/拒识」几个字；decode 是逐 token 串行的，
+            # 限制输出长度掐掉模型偶发多吐字带来的尾延迟
+            max_tokens=10,
         )
 
         result = response.get("choices", [{}])[0].get("message", {}).get("content", "").strip()

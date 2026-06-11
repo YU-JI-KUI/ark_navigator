@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from typing import Any, Dict, Optional
@@ -85,6 +86,10 @@ async def call_bigmodel_api(
                 logger.info(f"{request_id} 返回的response:{response.json()}")
                 response.raise_for_status()
                 return response.json()
+            except httpx.RequestError:
+                # 网络层错误交给外层做指数退避重试；
+                # 此前被下面的 except Exception 吞掉，外层退避分支实际是死代码
+                raise
             except Exception as e:
                 logger.error(f"API call failed: {e}")
                 if attempt < max_retries - 1:
@@ -93,7 +98,9 @@ async def call_bigmodel_api(
         except httpx.RequestError as e:
             logger.error(f"[WARNING] Request attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(1 * (2 ** attempt))  # 指数退避
+                # 必须用 asyncio.sleep：time.sleep 会卡住整个 event loop，
+                # 同副本上所有并发请求都会跟着停摆
+                await asyncio.sleep(1 * (2 ** attempt))
             else:
                 return None
 
