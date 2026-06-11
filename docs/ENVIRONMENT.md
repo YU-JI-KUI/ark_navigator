@@ -67,9 +67,9 @@
 
 | 变量名 | 必填 | 默认值 | 示例 | 说明 |
 |---|---|---|---|---|
-| `KB_MODE` | 否 | `remote` | `local` / `remote` | 全局知识库模式。`local`=本地 FAISS 索引；`remote`=远程 REST API |
-| `SHOUXIAN_KB_MODE` | 否 | 无（fallback `KB_MODE`） | `local` / `remote` | 寿险 deployment 模式覆盖。设置后只影响寿险，未设置则走 `KB_MODE` |
-| `YLX_KB_MODE` | 否 | 无（fallback `KB_MODE`） | `local` / `remote` | 养老险 deployment 模式覆盖。设置后只影响养老险，未设置则走 `KB_MODE` |
+| `KB_MODE` | 否 | `remote` | `local` / `remote` / `none` | 全局知识库模式。`local`=本地 FAISS 索引；`remote`=远程 REST API；`none`=跳过知识库检索，直连大模型 |
+| `SHOUXIAN_KB_MODE` | 否 | 无（fallback `KB_MODE`） | `local` / `remote` / `none` | 寿险 deployment 模式覆盖。设置后只影响寿险，未设置则走 `KB_MODE` |
+| `YLX_KB_MODE` | 否 | 无（fallback `KB_MODE`） | `local` / `remote` / `none` | 养老险 deployment 模式覆盖。设置后只影响养老险，未设置则走 `KB_MODE` |
 | `KB_FULL_SYNC_TIME` | 否 | `21:30` | `21:30` | 每日全量同步时间（HH:MM 24 小时制） |
 | `KB_PARTIAL_SYNC_INTERVAL_MINUTES` | 否 | `30` | `30` | 增量同步间隔（分钟） |
 | `KB_PARTIAL_FAQ_CATEGORY_ID` | 否 | `""` | `26687` | 增量同步的 FAQ 目录 ID（远程平台 categoryId）。空字符串=禁用增量同步 |

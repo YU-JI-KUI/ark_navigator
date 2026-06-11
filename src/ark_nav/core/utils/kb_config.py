@@ -6,7 +6,7 @@ import os
 class KBConfig:
     """知识库配置（模式 + 同步策略）"""
 
-    # 实现模式："local"（本地 FAISS）/ "remote"（远程 REST API）
+    # 实现模式："local"（本地 FAISS）/ "remote"（远程 REST API）/ "none"（跳过检索，直连大模型）
     # 全局默认 remote（保守）；生产环境应通过 .env 显式设置 KB_MODE=local
     # 每个 deployment 还可通过专属 env（如 SHOUXIAN_KB_MODE / YLX_KB_MODE）覆盖全局
     MODE = os.getenv("KB_MODE", "remote")
@@ -37,5 +37,5 @@ class KBConfig:
     @classmethod
     def check_required(cls):
         """启动期校验。MODE 值合法即可，其他都有默认值。"""
-        if cls.MODE.lower() not in ("local", "remote"):
-            raise ValueError(f"KB_MODE 取值必须为 'local' 或 'remote'，当前为: {cls.MODE!r}")
+        if cls.MODE.lower() not in ("local", "remote", "none"):
+            raise ValueError(f"KB_MODE 取值必须为 'local' / 'remote' / 'none'，当前为: {cls.MODE!r}")
