@@ -1,0 +1,13 @@
+# 本次改动清单，由 sync_single.py 自动生成
+# 普通行 = 复制到内网；[DEL] 开头 = 在内网删除该文件
+# 基于 origin/master @ 80a50d77
+# 涉及 commit（动作以 origin/master 为准：存在=复制、不存在=删除）:
+#   e2e27aab Embedding 副本 GPU 不可用时启动失败而非静默降级
+#   c3da8ee5 优化 search 接口耗时：FAQ 检索与大模型并行
+pyproject.toml
+src/ark_nav/core/models/embedding_model.py
+tests/test_embedding_model.py
+src/ark_nav/core/services/llm_platform_client.py
+src/ark_nav/domains/shouxian/intent_classifier_simple.py
+src/ark_nav/domains/shouxian/services/shouxian_nav_service.py
+tests/test_shouxian_search_latency.py
