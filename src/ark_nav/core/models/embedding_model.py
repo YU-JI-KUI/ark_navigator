@@ -35,7 +35,17 @@ class EmbeddingModelDeployment:
 
         setup_logging()
         logger = logging.getLogger(__name__)
-        self.device = "cuda" if torch.cuda.is_available() and settings.use_gpu else "cpu"
+        # USE_GPU=true 但 CUDA 不可用时必须 fail-fast：此前静默降级到 CPU，
+        # 而副本仍按 GPU 模式申请资源（num_cpus=0），CPU 推理在 Ray 资源账本上
+        # 隐形且无任何告警，问题被掩盖到性能排查时才暴露
+        if settings.use_gpu and not torch.cuda.is_available():
+            raise RuntimeError(
+                "USE_GPU=true 但 torch.cuda.is_available()=False，拒绝静默降级到 CPU。"
+                "请检查：1) 容器是否分到 GPU（K8s 需申请 nvidia.com/gpu，"
+                "容器内 /dev/nvidia* 是否存在）；2) torch 是否为 CUDA 构建"
+                "（torch.version.cuda 不应为 None）；纯 CPU 环境请显式设 USE_GPU=false"
+            )
+        self.device = "cuda" if settings.use_gpu else "cpu"
         logger.info(f"[Embedding] 加载模型到 {self.device}")
         self.embedding_model = SentenceTransformer(
             settings.embedding_model,
