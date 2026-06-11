@@ -1,2 +1,7 @@
 .idea
 uv.lock
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
