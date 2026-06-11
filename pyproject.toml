@@ -9,7 +9,7 @@ dependencies = [
     "cryptography>=46.0.3",
     "dotenv>=0.9.9",
     "fastapi>=0.119.0",
-    "torch>=2.9.0",
+    "torch==2.9.0",  # V100(sm_70): 2.9 的 cu128 构建保留 sm_70 且驱动 570 支持; cu130 已删 sm_70
     "langchain>=1.0.0",
     "langchain-community>=0.4",
     "pycryptodome>=3.23.0",
