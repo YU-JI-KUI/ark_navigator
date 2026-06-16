@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Union
+from dataclasses import dataclass
 import asyncio
 import json
 import re
@@ -18,6 +19,22 @@ from ark_nav.core.services.knowledge_base import KnowledgeBase
 
 LIFE_INSURANCE = "寿险意图"
 REJECTION = "拒识"
+
+# to_agent 命中这些 agent 且无 card_params 时清空，避免误触发对应中台流程
+_AGENTS_RESET_TO_AGENT = ("bonus-claim", "HONGLI")
+
+# 这些 agent 约定把整包 extrainfo 直接当作下游请求体
+_AGENTS_PASSTHROUGH_EXTRAINFO = ("shengcunjin-claim-E031", "claim-report")
+
+# chat_agent_req 从 extrainfo 透传的字段：(extrainfo 的 key, 下游的 key, 默认值)
+# 上游新增透传字段时只在此处加一行，无需改拼装逻辑
+_CHAT_AGENT_PASSTHROUGH = (
+    ("clientNo", "clientNo", None),
+    ("source", "source", "APP_SUPERAGENT"),
+    ("ssoTicket", "ssoTicket", ""),
+    ("userIp", "userIp", None),
+    ("osType", "osType", None),
+)
 
 logger = get_logger(__name__)
 
@@ -185,6 +202,53 @@ def _parse_rag_answer(rag_answer: str | None) -> dict[str, str]:
     }
 
 
+@dataclass
+class NavState:
+    """run 流程消费的上下文：上游 ChatCompletionRequest 翻译后的结果"""
+    intention: Optional[str]
+    open_id: Optional[str]
+    history: List[dict]
+    to_agent: str
+    chat_agent_req: Dict[str, Any]
+
+
+def _build_data_str(request: ChatCompletionRequest) -> str:
+    """组装下游 data 字段：优先 nextInput.data，其次 extrainfo.data，最后兜底自造"""
+    extra = request.extrainfo
+    if "nextInput" in extra:
+        return json.dumps(extra["nextInput"].get("data", {}), ensure_ascii=False, indent=2)
+    data = extra.get("data")
+    if not data:
+        data = {"inputTypes": "text", "msg": request.message}
+        if "extraParams" in extra:
+            data["extraParams"] = extra["extraParams"]
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def _resolve_to_agent(request: ChatCompletionRequest) -> str:
+    """命中 RESET 名单且无 card_params 时清空 to_agent"""
+    to_agent = request.to_agent or ""
+    if not request.card_params and to_agent in _AGENTS_RESET_TO_AGENT:
+        return ""
+    return to_agent
+
+
+def _build_chat_agent_req(request: ChatCompletionRequest, to_agent: str) -> Dict[str, Any]:
+    """组装下游寿险中控请求体：特定 agent 整包透传 extrainfo，其余按白名单透传 + 固定字段"""
+    if request.to_agent in _AGENTS_PASSTHROUGH_EXTRAINFO:
+        return request.extrainfo
+
+    chat_agent_req = {
+        "data": _build_data_str(request),
+        "reqId": request.msg_id,
+        "type": "200",
+        "traceId": request.extrainfo.get("traceId", ""),
+    }
+    for src_key, dst_key, default in _CHAT_AGENT_PASSTHROUGH:
+        chat_agent_req[dst_key] = request.extrainfo.get(src_key, default)
+    return chat_agent_req
+
+
 class ShouXianNavService:
 
     def __init__(self, shouxian_intent_agent, knowledge_base: KnowledgeBase):
@@ -218,61 +282,15 @@ class ShouXianNavService:
         }
 
     @staticmethod
-    def preprocess_input(request: ChatCompletionRequest) -> Dict[str, Any]:
-        history = process_history(request.contexts)
-        bu_channel = request.buChannel
-        open_id = request.extrainfo.get("openId")
-        trace_id = request.extrainfo.get("traceId", "")
-        data = request.extrainfo.get("data")
-        if "extraParams" in request.extrainfo:
-            data_obj = data if data else {"inputTypes": "text", "msg": request.message, "extraParams": request.extrainfo.get("extraParams")}
-        else:
-            data_obj = data if data else {"inputTypes": "text", "msg": request.message}
-        if "nextInput" in request.extrainfo:
-            next_input = request.extrainfo.get("nextInput", {})
-            data_str = json.dumps(next_input.get("data", {}), ensure_ascii=False, indent=2)
-        else:
-            data_str = json.dumps(data_obj, ensure_ascii=False, indent=2)
-        to_agent = request.to_agent
-        card_params = request.card_params
-        to_agent = "" if not card_params and to_agent in ("bonus-claim", "HONGLI") else to_agent
-        agent_conversation_id = request.agent_conversation_id
-        if len(to_agent) == 0:
-            card_params = {}
-            agent_conversation_id = None
-
-        chat_agent_req = {
-            "clientNo": request.extrainfo.get("clientNo"),
-            "data": data_str,
-            "reqId": request.msg_id,
-            "source": request.extrainfo.get("source", "APP_SUPERAGENT"),
-            "type": "200",
-            "traceId": trace_id,
-            "ssoTicket": request.extrainfo.get("ssoTicket", ""),
-            "userIp": request.extrainfo.get("userIp"),
-            "osType": request.extrainfo.get("osType")
-        }
-
-        if request.to_agent in ("shengcunjin-claim-E031", "claim-report"):
-            chat_agent_req = request.extrainfo
-
-        return {
-            "messages": [{"role": "user", "content": request.message}] + [
-                {"role": m["role"], "content": m["text"]} for m in history[::-1]
-            ],
-            "client_no": request.extrainfo.get("clientNo"),
-            "intention": request.extrainfo.get("intention"),
-            "open_id": open_id,
-            "history": history[::-1],
-            "data": data_str,
-            "agent_conversation_id": agent_conversation_id,
-            "source": request.extrainfo.get("source", "APP_SUPERAGENT"),
-            "card_params": card_params,
-            "to_agent": to_agent,
-            "chat_agent_req": chat_agent_req,
-            "bu_channel": bu_channel,
-            "trace_id": trace_id
-        }
+    def preprocess_input(request: ChatCompletionRequest) -> NavState:
+        to_agent = _resolve_to_agent(request)
+        return NavState(
+            intention=request.extrainfo.get("intention"),
+            open_id=request.extrainfo.get("openId"),
+            history=process_history(request.contexts)[::-1],
+            to_agent=to_agent,
+            chat_agent_req=_build_chat_agent_req(request, to_agent),
+        )
 
     @staticmethod
     def get_rejection() -> Dict[str, Any]:
@@ -290,8 +308,8 @@ class ShouXianNavService:
                 return result
 
             state = self.preprocess_input(request)
-            open_id = state.get("open_id")
-            intention = state.get("intention")
+            open_id = state.open_id
+            intention = state.intention
 
             if intention == "life_insurance":
                 logger.info(f"msg_id = {request.msg_id}, 已经存在意图，直接分发给寿险中台")
@@ -310,7 +328,7 @@ class ShouXianNavService:
                         result = self.get_rejection()
                     else:
                         model_return = await self.classify_service.shouxian_classify_intent(
-                            msg_id=msg_id, message=request.message, reject_reconfirm=True, history=state.get("history"))
+                            msg_id=msg_id, message=request.message, reject_reconfirm=True, history=state.history)
                         if model_return in [LIFE_INSURANCE]:
                             result = await self._do_intent_recognition(request, state)
                         else:
@@ -382,12 +400,12 @@ class ShouXianNavService:
             logger.error(f"{request.msg_id}, 请求异常:{str(e)}")
             return self.post_search(str(e))
 
-    async def _do_intent_recognition(self, request: ChatCompletionRequest, state: Dict[str, Any]) -> Dict[str, Any]:
+    async def _do_intent_recognition(self, request: ChatCompletionRequest, state: NavState) -> Dict[str, Any]:
         result = await self.intent_recognition_service.run(
             req_id=request.msg_id,
-            to_agent=state.get("to_agent", ""),
+            to_agent=state.to_agent,
             bu_channel=request.buChannel,
-            chat_agent_req=state.get("chat_agent_req"),
+            chat_agent_req=state.chat_agent_req,
         )
         return result
 
