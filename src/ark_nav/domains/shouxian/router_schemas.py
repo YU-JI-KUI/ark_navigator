@@ -47,6 +47,9 @@ class SearchIntentRequest(BaseModel):
     def _force_reject_reconfirm_false(cls, v: Optional[bool]) -> bool:
         return False
 
+class ClassifyRequest(BaseModel):
+    message: str = ""
+
 # 定义ChatCompletionRequest类
 class ChatCompletionRequest(BaseModel):
     message: str = ""

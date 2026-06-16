@@ -60,7 +60,7 @@ class HttpClientManager:
     def client(self) -> httpx.AsyncClient:
         """获取client实例"""
         if self._client is None:
-            logger.warn("HttpClient not initialized. initialize the default one.")
+            logger.warning("HttpClient not initialized. initialize the default one.")
             self.initialize()
         return self._client
 

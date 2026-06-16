@@ -15,6 +15,7 @@ from ark_nav.core.utils.httpx_deployment_decorator import with_http_client
 from ark_nav.domains.shouxian.router_schemas import (
     ChatCompletionRequest,
     SearchIntentRequest,
+    ClassifyRequest,
     IntentRequest,
     IntentResult,
 )
@@ -104,6 +105,13 @@ class NavAgentDeployment:
         await self._ensure_scheduler_started()
         logger.info(f"nav_agent.search msg_id={request.msg_id}")
         response = await self.svc.search(request=request)
+        return response
+
+    @propagate_trace
+    async def classify(self, request: ClassifyRequest):
+        await self._ensure_scheduler_started()
+        logger.info(f"nav_agent.classify message={request.message}")
+        response = await self.svc.classify(request=request)
         return response
 
     @propagate_trace
