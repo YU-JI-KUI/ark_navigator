@@ -1,9 +1,6 @@
 # 本次改动清单，由 sync_single.py 自动生成
 # 普通行 = 复制到内网；[DEL] 开头 = 在内网删除该文件
-# 基于 origin/master @ 3e8ab105
+# 基于 origin/master @ 38e7242b
 # 涉及 commit（动作以 origin/master 为准：存在=复制、不存在=删除）:
-#   c18d2076 search 强制忽略 reject_reconfirm 入参
-#   26d1eb62 torch 锁定 2.9.0 适配 V100
-src/ark_nav/domains/shouxian/router_schemas.py
-tests/test_search_reject_reconfirm.py
-pyproject.toml
+#   4477b36b 重构寿险导航预处理：松散 dict 改强类型 NavState
+src/ark_nav/domains/shouxian/services/shouxian_nav_service.py
