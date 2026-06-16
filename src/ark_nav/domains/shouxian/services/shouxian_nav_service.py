@@ -14,7 +14,7 @@ load_dotenv()
 
 from ark_nav.core.utils.nav_logger import get_logger, print_execution_time
 from ark_nav.core.utils.http_client_manager import get_client
-from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, ChatCompletionResponse, IntentRequest, IntentResult, SearchIntentRequest
+from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, ChatCompletionResponse, ClassifyRequest, IntentRequest, IntentResult, SearchIntentRequest
 from ark_nav.core.services.knowledge_base import KnowledgeBase
 
 LIFE_INSURANCE = "寿险意图"
@@ -303,7 +303,7 @@ class ShouXianNavService:
     async def run(self, msg_id: str, request: ChatCompletionRequest):
         try:
             if not request.message:
-                logger.warn(f"{msg_id}, Invalid request: Empty or invalid messages")
+                logger.warning(f"{msg_id}, Invalid request: Empty or invalid messages")
                 result = self.postprocess(request, ChatCompletionResponse())
                 return result
 
@@ -358,11 +358,20 @@ class ShouXianNavService:
             return final_result
 
     @print_execution_time
+    async def classify(self, request: ClassifyRequest) -> str:
+        """search 的精简版：跳过知识库，直接调大模型，返回大模型原始结果"""
+        if not request.message:
+            logger.warning("Invalid request: Empty or invalid messages")
+            return ""
+
+        return await self.classify_service.classify_intent_raw(request.message)
+
+    @print_execution_time
     async def search(self, request: SearchIntentRequest):
         final_result = "life_insurance"
         try:
             if not request.message:
-                logger.warn(f"Invalid request: Empty or invalid messages")
+                logger.warning("Invalid request: Empty or invalid messages")
                 return final_result
 
             # FAQ 检索和大模型分类并行发起：阈值 0.9 下 FAQ 大概率不命中，
@@ -537,6 +546,14 @@ class ClassifyService:
 
     def __init__(self, shouxian_intent_agent):
         self.shouxian_intent_agent = shouxian_intent_agent
+
+    @print_execution_time
+    async def classify_intent_raw(self, message: str):
+        """直接返回大模型原始标签，不做拒识/寿险意图归一化"""
+        logger.info(f"模型入参: {message}")
+        result = await self._classify_intent(message, reject_reconfirm=False, history=[])
+        logger.info(f"模型识别结果: {result}")
+        return result
 
     @print_execution_time
     async def shouxian_classify_intent(self, msg_id: str, message: str, reject_reconfirm, history):

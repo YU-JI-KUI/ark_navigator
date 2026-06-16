@@ -1,5 +1,4 @@
 import json
-import os
 from typing import AsyncIterator
 
 from fastapi.responses import StreamingResponse
@@ -9,8 +8,7 @@ import asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from ark_nav.core.utils.nav_logger import get_logger, remote_with_trace
-from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, SearchIntentRequest
-from ark_nav.core.services.agent_platform_client import init_prompt_from_agent_rag
+from ark_nav.domains.shouxian.router_schemas import ChatCompletionRequest, ClassifyRequest, SearchIntentRequest
 
 logger = get_logger("ark_nav")
 
@@ -77,20 +75,20 @@ def create_shouxian_router(shouxian_nav_agent):
             logger.info(f"nav_agent done msg_id={request.msg_id}")
             return response
 
-    @router.get("/refresh_prompt")
-    async def refresh_root():
-        await init_prompt_from_agent_rag()
-        return {
-            "xiezhi": os.getenv("XIEZHI_PROMPT"),
-            "baize": os.getenv("BAIZE_PROMPT")
-        }
-
     @router.post("/search")
     async def search(request: SearchIntentRequest):
         """
         搜索 API
         """
         result = await remote_with_trace(shouxian_nav_agent.search, request)
+        return result
+
+    @router.post("/classify")
+    async def classify(request: ClassifyRequest):
+        """
+        search 精简版：跳过知识库，直接访问大模型，返回大模型原始结果
+        """
+        result = await remote_with_trace(shouxian_nav_agent.classify, request)
         return result
 
     return router
